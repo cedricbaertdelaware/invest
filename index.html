@@ -294,7 +294,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
             <button class="btn btn-primary" onclick="openAddModal('watch')">+ Toevoegen</button>
           </div>
         </div>
-        <div id="watchlist-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;"></div>
+        <div id="watchlist-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;"></div>
       </div>
 
       <!-- ALERTS -->
@@ -904,27 +904,256 @@ function renderAllocation() {
   }).join("");
 }
 
-function renderWatchlist() {
-  var d=getData(), watchlist=d.watchlist;
-  var q=((document.getElementById("watchlist-search")||{}).value||"").toLowerCase();
-  var tf=(document.getElementById("wl-filter")||{}).value||"";
-  var filtered=watchlist.filter(function(w){return (!q||w.ticker.toLowerCase().includes(q)||w.name.toLowerCase().includes(q))&&(!tf||w.type===tf);});
-  document.getElementById("watchlist-grid").innerHTML = filtered.length ?
-    filtered.map(function(w){
-      return '<div class="card" style="cursor:pointer;" onclick="openDetail(\''+w.id+'\',\'wl\')">'+
-        '<div class="flex-center gap-8" style="margin-bottom:10px;">'+
-        '<div class="asset-avatar av-'+w.type+'">'+w.ticker.slice(0,3)+'</div>'+
-        '<div style="flex:1;min-width:0;"><div class="flex-center gap-8"><div class="asset-name">'+w.ticker+'</div>'+(w.fav?'<span style="color:var(--red);">&#9733;</span>':"")+'</div>'+
-        '<div class="asset-sub truncate">'+w.name+'</div></div>'+typeBadge(w.type)+'</div>'+
-        (w.tags&&w.tags.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'+w.tags.map(function(t){return '<span class="tag">'+t+'</span>';}).join("")+'</div>':"")+
-        (w.note?'<div class="note-text">'+w.note+'</div>':"")+
-        '<div class="links-row" style="margin-top:10px;" onclick="event.stopPropagation();">'+renderLinks(w.ticker,w.type)+'</div>'+
-        '<div style="margin-top:10px;display:flex;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation();">'+
-        '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')">&#9998;</button>'+
-        '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')">&#x2715;</button></div></div>';
-    }).join("") :
-    '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div><p>Geen items'+(q?' voor "'+q+'"':"")+'</p></div>';
+
+// ============================================================
+// INSTRUMENT KNOWLEDGE BASE
+// TER, TOB, type, domicile, ISIN, description, pros, cons
+// ============================================================
+var INSTRUMENT_DB = {
+  "IWDA": {
+    name: "iShares Core MSCI World UCITS ETF",
+    isin: "IE00B4L5Y983",
+    category: "Wereld",
+    ter: 0.20,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: "Aanbevolen",
+    badgeColor: "var(--accent)",
+    description: "Tracks de MSCI World index — ~1.500 aandelen uit 23 ontwikkelde landen. Gemiddeld <strong>10.2% per jaar</strong> rendement sinds 1980. Ideale kern van een portfolio.",
+    pros: ["Laagste kosten", "Beste TOB-tarief", "Grootste liquiditeit", "Bolero playlist ✓"],
+    cons: ["Geen opkomende markten", "~65% VS-concentratie"]
+  },
+  "VWCE": {
+    name: "Vanguard FTSE All-World UCITS ETF",
+    isin: "IE00BK5BQT80",
+    category: "Wereld",
+    ter: 0.22,
+    tob: 1.32,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    tobWarning: "TOB 1.32% door Belgische registratie — 11× hoger dan IWDA. Kost bij €1.000 al €13,20 extra bij elke koop/verkoop.",
+    description: "~3.700 aandelen incl. opkomende markten (China, India…). Breedste diversificatie beschikbaar. Gemiddeld <strong>8.7% per jaar</strong> sinds 2005. Populair, maar de hoge TOB bijt.",
+    pros: ["Breedste diversificatie", "Opkomende markten inbegrepen", "Vanguard kwaliteit"],
+    cons: ["TOB 1.32% is zeer hoog", "Hogere TER dan IWDA"]
+  },
+  "EMIM": {
+    name: "iShares MSCI EM IMI UCITS ETF",
+    isin: "IE00BKM4GZ66",
+    category: "Opkomende markten",
+    ter: 0.18,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "Opkomende markten: China, India, Brazilië, Taiwan… ~3.000 aandelen. Hogere volatiliteit, hoger groeipotentieel. Goed als satelliet naast IWDA.",
+    pros: ["Lage TER", "Lage TOB 0.12%", "Diversificatie buiten VS"],
+    cons: ["Hoge volatiliteit", "Politiek/valutarisico", "Underperformance mogelijk"]
+  },
+  "EQQQ": {
+    name: "Invesco Nasdaq-100 UCITS ETF Dist",
+    isin: "IE0032077012",
+    category: "Technologie",
+    ter: 0.30,
+    tob: 0.12,
+    accumulating: false,
+    domicile: "Ierland",
+    badge: "Populair",
+    badgeColor: "var(--blue)",
+    description: "100 grootste niet-financiële Nasdaq-bedrijven. Apple, Microsoft, Nvidia, Amazon… Historisch <strong>16.7% per jaar</strong> gemiddeld rendement. Distributief: 30% dividendbelasting opletten.",
+    pros: ["Sterk trackrecord", "Liquide", "Lage TOB", "Bolero playlist ✓"],
+    cons: ["Distribuerend (= 30% div.taks)", "Zwaar VS/tech-geconcentreerd", "Hoger volatiel"]
+  },
+  "XNAS": {
+    name: "Xtrackers Nasdaq-100 UCITS ETF 1C",
+    isin: "IE00BMFKG444",
+    category: "Technologie",
+    ter: 0.25,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "Zelfde index als EQQQ maar accumulerend en goedkoper. Geen dividendbelasting van 30%. Goede alternatieve optie als je niet wil uitkeren.",
+    pros: ["Goedkoopste Nasdaq-100", "Accumulerend", "Lage TOB"],
+    cons: ["Kleiner fonds dan EQQQ", "Iets minder liquide"]
+  },
+  "CSPX": {
+    name: "iShares Core S&P 500 UCITS ETF",
+    isin: "IE00B5BMR087",
+    category: "VS",
+    ter: 0.07,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "500 grootste Amerikaanse bedrijven. Laagste TER beschikbaar. Gemiddeld ~10.5% per jaar. Puur VS-geconcentreerd.",
+    pros: ["Ultra lage TER 0.07%", "Lage TOB", "Meest liquide ETF"],
+    cons: ["100% VS-concentratie", "Geen diversificatie buiten VS"]
+  },
+  "MEUD": {
+    name: "Amundi MSCI Europe UCITS ETF",
+    isin: "LU1681043599",
+    category: "Europa",
+    ter: 0.15,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Luxemburg",
+    badge: null,
+    description: "Europese aandelen uit 15 landen. Defensive tegenhanger voor VS-heavy portfolio. Lagere groei maar meer stabiliteit.",
+    pros: ["Lage kosten", "Europese diversificatie", "Lage volatiliteit"],
+    cons: ["Lagere historische groei", "Energie/finance-zwaar"]
+  },
+  "ASML": {
+    name: "ASML Holding NV",
+    isin: "NL0010273215",
+    category: "Technologie",
+    exchange: "Euronext Amsterdam",
+    description: "Wereldmonopolist in EUV-lithografiemachines. Onmisbaar voor chip productie bij TSMC, Samsung, Intel. <strong>Sterke pricing power</strong>, lange orderboeken.",
+    pros: ["Monopoliepositie EUV", "Sterke groei", "Europees tech-icoon"],
+    cons: ["Hoge waardering", "Export restricties China", "Cyclisch"]
+  },
+  "UCB": {
+    name: "UCB SA",
+    isin: "BE0003739530",
+    category: "Farma",
+    exchange: "Euronext Brussel",
+    description: "Belgisch biofarmabedrijf. Specialisatie in neurologie en immunologie. Rozanolixizumab en Bimekizumab als groeipijlers.",
+    pros: ["Sterke pijplijn", "Dividendaandeel", "BEL20 liquiditeit"],
+    cons: ["Patentrisico", "Regulatory risico", "Marktconcentratie"]
+  },
+  "BTC": {
+    name: "Bitcoin",
+    category: "Crypto",
+    description: "Grootste cryptocurrency op marktkapitalisatie. Store of value narratief. Hoge volatiliteit, lange termijn appreciatie historisch sterk.",
+    pros: ["Grootste liquiditeit", "Institutionele adoptie", "Deflatoir model"],
+    cons: ["Extreme volatiliteit", "Regulatierisico", "Geen dividenden"]
+  },
+  "ETH": {
+    name: "Ethereum",
+    category: "Crypto",
+    description: "Smart contract platform. DeFi, NFT en Web3 infrastructuur. Proof-of-Stake since 2022. Lager energieverbruik dan Bitcoin.",
+    pros: ["Grootste developer ecosysteem", "Proof-of-Stake", "Utility token"],
+    cons: ["Hoge gasprijzen mogelijk", "Concurrentie Layer 1s", "Complexer dan BTC"]
+  }
+};
+
+function getInstrumentInfo(ticker) {
+  return INSTRUMENT_DB[ticker.toUpperCase()] || null;
 }
+
+function renderWatchlist() {
+  var d = getData(), watchlist = d.watchlist;
+  var q = ((document.getElementById("watchlist-search")||{}).value||"").toLowerCase();
+  var tf = (document.getElementById("wl-filter")||{}).value||"";
+  var filtered = watchlist.filter(function(w){
+    return (!q||w.ticker.toLowerCase().includes(q)||w.name.toLowerCase().includes(q)) && (!tf||w.type===tf);
+  });
+  if(!filtered.length) {
+    document.getElementById("watchlist-grid").innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div><p>Geen items'+(q?' voor "'+q+'"':"")+' &mdash; voeg een instrument toe</p></div>';
+    return;
+  }
+  document.getElementById("watchlist-grid").innerHTML = filtered.map(function(w){
+    var info = getInstrumentInfo(w.ticker);
+    return info ? renderEnrichedCard(w, info) : renderBasicCard(w);
+  }).join("");
+}
+
+function renderEnrichedCard(w, info) {
+  var isETF = w.type === "etf";
+  var tobHigh = isETF && info.tob && info.tob > 0.5;
+  var accColor = info.accumulating === false ? "var(--amber)" : "var(--green)";
+  var accLabel = info.accumulating === false ? "Distribuerend" : info.accumulating === true ? "Accumulerend" : "";
+
+  var headerBadge = info.badge ?
+    '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:'+(info.badgeColor||"var(--accent)")+';color:#fff;margin-bottom:6px;display:inline-block;">'+info.badge+'</span><br>' : "";
+
+  var categoryBadge = info.category ?
+    '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg4);color:var(--text3);border:1px solid var(--border);margin-bottom:8px;display:inline-block;">'+info.category+'</span>' : "";
+
+  var terTobRow = (isETF && info.ter) ?
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">TER</div>'+
+    '<div style="font-size:14px;font-weight:500;color:var(--green);">'+info.ter.toFixed(2)+'%</div></div>'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;'+(tobHigh?"border:1px solid rgba(242,92,122,0.3);":"")+'">'+
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">TOB</div>'+
+    '<div style="font-size:14px;font-weight:500;color:'+(tobHigh?"var(--red)":"var(--green)")+';">'+info.tob.toFixed(2)+'% '+(tobHigh?"!":"")+'</div></div>'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Type</div>'+
+    '<div style="font-size:13px;font-weight:500;color:'+accColor+';">'+accLabel+'</div></div>'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Domicilie</div>'+
+    '<div style="font-size:13px;font-weight:500;color:var(--text);">'+info.domicile+' '+(info.domicile==="Ierland"?"✓":"")+'</div></div>'+
+    '</div>' : "";
+
+  var tobWarning = (isETF && info.tobWarning) ?
+    '<div style="background:var(--amber-bg);border:1px solid rgba(245,166,35,0.25);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--amber);margin-bottom:10px;">&#9651; '+info.tobWarning+'</div>' : "";
+
+  var isinRow = info.isin ?
+    '<div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;">'+info.isin+'</div>' : "";
+
+  var desc = info.description ?
+    '<div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">'+info.description+'</div>' : "";
+
+  var prosConsRow = (info.pros || info.cons) ?
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'+
+    (info.pros ? '<div><div style="font-size:10px;font-weight:500;color:var(--green);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Voordelen</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.6;">'+info.pros.join(' · ')+'</div></div>' : "")+
+    (info.cons ? '<div><div style="font-size:10px;font-weight:500;color:var(--red);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Nadelen</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.6;">'+info.cons.join(' · ')+'</div></div>' : "")+
+    '</div>' : "";
+
+  var tagsRow = (w.tags && w.tags.length) ?
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'+w.tags.map(function(t){return '<span class="tag">'+t+'</span>';}).join("")+'</div>' : "";
+
+  var noteRow = w.note ? '<div class="note-text" style="margin-bottom:8px;">'+w.note+'</div>' : "";
+
+  return '<div class="card" style="cursor:default;border-color:'+(w.fav?"rgba(242,92,122,0.25)":"var(--card-border)")+';">'+
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">'+
+    '<div style="flex:1;">'+
+    headerBadge+
+    categoryBadge+
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'+
+    '<div style="font-size:22px;font-weight:600;color:var(--text);">'+w.ticker+'</div>'+
+    (w.fav ? '<span style="color:var(--red);font-size:16px;">&#9733;</span>' : "")+
+    typeBadge(w.type)+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+info.name+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:4px;" onclick="event.stopPropagation();">'+
+    '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')" title="Bewerk">&#9998;</button>'+
+    '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')" title="Verwijder">&#x2715;</button>'+
+    '</div>'+
+    '</div>'+
+    isinRow+
+    terTobRow+
+    tobWarning+
+    desc+
+    prosConsRow+
+    tagsRow+
+    noteRow+
+    '<div class="links-row" onclick="event.stopPropagation();">'+renderLinks(w.ticker,w.type)+'</div>'+
+    '</div>';
+}
+
+function renderBasicCard(w) {
+  return '<div class="card" style="cursor:default;">'+
+    '<div class="flex-center gap-8" style="margin-bottom:10px;">'+
+    '<div class="asset-avatar av-'+w.type+'">'+w.ticker.slice(0,3)+'</div>'+
+    '<div style="flex:1;min-width:0;"><div class="flex-center gap-8"><div class="asset-name">'+w.ticker+'</div>'+(w.fav?'<span style="color:var(--red);">&#9733;</span>':"")+' </div>'+
+    '<div class="asset-sub truncate">'+w.name+'</div></div>'+
+    typeBadge(w.type)+
+    '</div>'+
+    (w.tags&&w.tags.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'+w.tags.map(function(t){return '<span class="tag">'+t+'</span>';}).join("")+'</div>':"")+
+    (w.note?'<div class="note-text" style="margin-bottom:8px;">'+w.note+'</div>':"")+
+    '<div class="links-row" style="margin-bottom:10px;" onclick="event.stopPropagation();">'+renderLinks(w.ticker,w.type)+'</div>'+
+    '<div style="display:flex;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation();">'+
+    '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')">&#9998;</button>'+
+    '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')">&#x2715;</button>'+
+    '</div></div>';
+}
+
 
 function renderAlerts() {
   var alerts=getData().alerts;
