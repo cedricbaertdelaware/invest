@@ -116,13 +116,121 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .toast.show{transform:translateY(0);}
 .toast.success{border-color:var(--green);color:var(--green);}
 .toast.error{border-color:var(--red);color:var(--red);}
+
+/* ============================================================
+   MOBILE — full responsive overrides
+   ============================================================ */
 @media(max-width:768px){
-  #sidebar{position:fixed;top:0;left:0;height:100vh;transform:translateX(-100%);}
+  /* Sidebar: slide-in drawer */
+  #sidebar{
+    position:fixed;top:0;left:0;height:100vh;
+    transform:translateX(-100%);
+    box-shadow:4px 0 24px rgba(0,0,0,0.4);
+    z-index:200;
+  }
   #sidebar.open{transform:translateX(0);}
+
+  /* Overlay behind open sidebar */
+  #sidebar-overlay{
+    display:none;position:fixed;inset:0;
+    background:rgba(0,0,0,0.5);z-index:199;
+  }
+  #sidebar.open ~ #sidebar-overlay,
+  #sidebar-overlay.open{display:block;}
+
+  /* Show hamburger */
   #menu-btn{display:flex;}
+
+  /* Topbar: tighter on mobile */
+  .topbar{padding:0 12px;height:52px;gap:8px;}
+  .topbar-title{font-size:14px;}
+  #sync-status{display:none;}
+
+  /* Content padding */
+  #content{padding:12px;}
+
+  /* Grids collapse to single column */
   .grid-4{grid-template-columns:1fr 1fr;}
-  .grid-3{grid-template-columns:1fr 1fr;}
+  .grid-3{grid-template-columns:1fr;}
   .grid-2{grid-template-columns:1fr;}
+
+  /* Metric cards: smaller font on mobile */
+  .metric-value{font-size:20px;}
+  .metric-label{font-size:10px;}
+
+  /* Portfolio table: horizontal scroll */
+  #portfolio-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .data-table{font-size:12px;}
+  .data-table td,.data-table th{padding:8px 8px;}
+
+  /* Section headers: stack on very small screens */
+  .section-header{flex-wrap:wrap;gap:8px;}
+  .section-header .flex{flex-wrap:wrap;gap:6px;}
+
+  /* Search inputs: full width on mobile */
+  .search-input{width:100%;}
+
+  /* Sort dropdowns: full width */
+  #portfolio-sort-wrap select,
+  #watchlist-sort-wrap select,
+  #alerts-sort-wrap select{width:100%!important;}
+
+  /* Watchlist grid: single column */
+  #watchlist-grid{grid-template-columns:1fr!important;}
+
+  /* Cards: less padding */
+  .card{padding:14px 14px;}
+
+  /* Modal: full screen on mobile */
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{
+    max-width:100%!important;width:100%!important;
+    border-radius:20px 20px 0 0;
+    max-height:92vh;
+    padding:20px 16px;
+  }
+
+  /* Form rows: single column on mobile */
+  .form-row{grid-template-columns:1fr;}
+
+  /* Topbar actions: hide less important items */
+  .topbar-actions .btn-sm:not(#sync-prices-btn):not(.btn-primary){
+    display:none;
+  }
+
+  /* Loading overlay text */
+  .loading-overlay div{font-size:12px;}
+
+  /* Toast: full width bottom */
+  .toast{
+    right:0;left:0;bottom:0;border-radius:0;
+    border-left:none;border-right:none;border-bottom:none;
+    justify-content:center;
+  }
+
+  /* Sync progress bar */
+  #sync-progress{padding:6px 12px;}
+
+  /* Dashboard positions table: hide less critical columns */
+  #dashboard-positions .data-table th:nth-child(4),
+  #dashboard-positions .data-table td:nth-child(4){display:none;}
+
+  /* Glossary: full width items */
+  .glossary-item{margin-bottom:8px;}
+}
+
+/* Extra small screens (< 400px) */
+@media(max-width:400px){
+  .grid-4{grid-template-columns:1fr;}
+  .metric-value{font-size:18px;}
+  .topbar-title{font-size:13px;}
+  #content{padding:10px;}
+}
+
+/* Tablet (769px - 1024px): sidebar stays, but tighter */
+@media(min-width:769px) and (max-width:1024px){
+  :root{--sidebar-w:180px;}
+  .grid-4{grid-template-columns:1fr 1fr;}
   #content{padding:16px;}
 }
 .mb-16{margin-bottom:16px;}.mb-24{margin-bottom:24px;}.mt-16{margin-top:16px;}
@@ -148,6 +256,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 <div class="toast" id="toast"></div>
 
 <div id="app">
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <nav id="sidebar">
     <div class="sidebar-logo">
       <div class="logo-mark">&#9672; folio <span class="sync-dot" id="sync-dot" title="Verbindingsstatus"></span></div>
@@ -659,12 +768,22 @@ function navigate(v) {
   var ni = document.querySelector('[data-view="'+v+'"]');
   if(ni) ni.classList.add("active");
   document.getElementById("topbar-title").textContent = VTITLES[v]||v;
-  if(window.innerWidth<=768) document.getElementById("sidebar").classList.remove("open");
+  if(window.innerWidth<=768) { document.getElementById("sidebar").classList.remove("open"); var ov=document.getElementById("sidebar-overlay"); if(ov) ov.classList.remove("open"); }
   var renders = {dashboard:renderDashboard,briefing:renderBriefing,portfolio:renderPortfolio,allocation:renderAllocation,watchlist:renderWatchlist,alerts:renderAlerts,settings:renderSettings,glossary:renderGlossary};
   if(renders[v]) renders[v]();
 }
 
-function toggleSidebar(){ document.getElementById("sidebar").classList.toggle("open"); }
+function toggleSidebar(){
+  var sb = document.getElementById("sidebar");
+  var ov = document.getElementById("sidebar-overlay");
+  sb.classList.toggle("open");
+  if(ov) ov.classList.toggle("open");
+}
+function closeSidebar(){
+  document.getElementById("sidebar").classList.remove("open");
+  var ov = document.getElementById("sidebar-overlay");
+  if(ov) ov.classList.remove("open");
+}
 function toggleTheme(){
   var c = document.documentElement.getAttribute("data-theme");
   setTheme(c==="dark"?"light":"dark");
