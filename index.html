@@ -1239,7 +1239,7 @@ function renderEnrichedCard(w, info) {
     (livePrice && livePrice.ok ?
       '<div style="margin-left:auto;text-align:right;">'+
       '<div style="font-size:13px;font-family:var(--mono);color:'+(livePrice.changePct>=0?"var(--green)":"var(--red)")+';">'+(livePrice.changePct>=0?"&#9650;":"&#9660;")+' '+fmtPct(livePrice.changePct)+'</div>'+
-      '<div style="font-size:10px;color:var(--text3);">'+formatPriceAge(livePrice.updated)+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);">'+formatPriceAge(livePrice.updated)+' &bull; '+livePrice.symbol+'</div>'+
       '</div>'
       : '<span style="font-size:10px;color:var(--text3);margin-left:auto;">geen live data &mdash; klik Sync</span>')+
     '</div>' :
@@ -1577,6 +1577,7 @@ async function savePosition(id) {
     currentPrice:parseFloat((document.getElementById("f-cur")||{}).value)||avg,
     tags:((document.getElementById("f-tags")||{}).value||"").split(",").map(function(t){return t.trim();}).filter(Boolean),
     note:(document.getElementById("f-note")||{}).value||"",
+    yahooSymbol:(document.getElementById("f-yahoo")||{}).value||"",
     fav:(document.getElementById("f-fav")||{}).checked||false};
   var portfolio=d.portfolio.slice();
   var idx=portfolio.findIndex(function(p){return p.id===id;});
@@ -1595,6 +1596,7 @@ async function saveWatchitem(id) {
     type:(document.getElementById("f-type")||{}).value||"etf",
     tags:((document.getElementById("f-tags")||{}).value||"").split(",").map(function(t){return t.trim();}).filter(Boolean),
     note:(document.getElementById("f-note")||{}).value||"",
+    yahooSymbol:(document.getElementById("f-yahoo")||{}).value||"",
     fav:(document.getElementById("f-fav")||{}).checked||false};
   var watchlist=d.watchlist.slice();
   var idx=watchlist.findIndex(function(w){return w.id===id;});
@@ -1782,23 +1784,55 @@ async function initApp() {
 // ============================================================
 
 function toYahooSymbol(ticker, type) {
-  var cryptoMap = {"BTC":"BTC-EUR","ETH":"ETH-EUR","SOL":"SOL-EUR","BNB":"BNB-EUR","ADA":"ADA-EUR","XRP":"XRP-EUR","DOT":"DOT-EUR","LINK":"LINK-EUR"};
-  if(type === "crypto") return cryptoMap[ticker.toUpperCase()] || (ticker.toUpperCase()+"-EUR");
-  // ETFs listed on Euronext Amsterdam (.AS) or London (.L)
-  var asETFs = ["IWDA","VWCE","EMIM","EQQQ","XNAS","CSPX","MEUD","DFEN","EUDF","CS51","IMAE","IEMA","VUSA","SWRD","IUSQ","HMWO","AGGH"];
-  if(type === "etf") {
-    if(asETFs.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".AS";
-    return ticker.toUpperCase()+".AS"; // default try Amsterdam
-  }
-  // Belgian stocks
-  var belStocks = ["AB","UCB","KBC","ING","SOLB","ABI","GBLB","ACKB","AGS","COLR"];
-  if(belStocks.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".BR";
-  // Dutch stocks
-  var nlStocks = ["ASML","ADYEN","HEIA","PHIA","WKL","REN","NN","AKZA"];
-  if(nlStocks.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".AS";
-  // Default: try as-is (US stocks)
-  return ticker.toUpperCase();
+  var t = ticker.toUpperCase();
+
+  // Check user-defined overrides first (stored in settings)
+  var settings = getData().settings;
+  var overrides = settings.yahooSymbols || {};
+  if(overrides[t]) return overrides[t];
+
+  // Hardcoded accurate Yahoo Finance symbol map
+  // These are verified against Bolero/Euronext EUR prices
+  var SYMBOL_MAP = {
+    // ETFs on Euronext Amsterdam (.AS) - EUR prices
+    "IWDA":"IWDA.AS","VWCE":"VWCE.AS","EMIM":"EMIM.AS","CSPX":"CSPX.AS",
+    "XNAS":"XNAS.AS","EQQQ":"EQQQ.AS","MEUD":"MEUD.AS","IMAE":"IMAE.AS",
+    "DFEN":"DFEN.AS","IEMA":"IEMA.AS","VUSA":"VUSA.AS","SWRD":"SWRD.AS",
+    "IUSQ":"IUSQ.AS","AGGH":"AGGH.AS","HMWO":"HMWO.AS","IQQQ":"IQQQ.AS",
+    "SPPW":"SPPW.AS","VWRL":"VWRL.AS","EXSA":"EXSA.DE","SPYW":"SPYW.AS",
+    // Note: CS51 ticker on Yahoo is different
+    "CS51":"C51.AS",
+    // EUDF = WisdomTree Europe Defence - trades on multiple exchanges
+    // Paris listing is most liquid for EUR
+    "EUDF":"EUDF.PA",
+    // Belgian stocks on Euronext Brussels (.BR)
+    "UCB":"UCB.BR","KBC":"KBC.BR","SOLB":"SOLB.BR",
+    "GBLB":"GBLB.BR","ACKB":"ACKB.BR","AGS":"AGS.BR",
+    "COLR":"COLR.BR","LOTB":"LOTB.BR","BEFB":"BEFB.BR",
+    // Note: AB InBev ticker on Yahoo is ABI, not AB
+    "AB":"ABI.BR","ABI":"ABI.BR",
+    // Dutch stocks on Euronext Amsterdam (.AS)
+    "ASML":"ASML.AS","ADYEN":"ADYEN.AS","HEIA":"HEIA.AS",
+    "PHIA":"PHIA.AS","WKL":"WKL.AS","NN":"NN.AS","AKZA":"AKZA.AS",
+    // US stocks - no suffix needed
+    "AAPL":"AAPL","MSFT":"MSFT","NVDA":"NVDA","GOOGL":"GOOGL",
+    "AMZN":"AMZN","META":"META","TSLA":"TSLA","NFLX":"NFLX",
+    "AMD":"AMD","INTC":"INTC","QCOM":"QCOM","AVGO":"AVGO",
+    // Crypto - EUR pairs
+    "BTC":"BTC-EUR","ETH":"ETH-EUR","SOL":"SOL-EUR","BNB":"BNB-EUR",
+    "ADA":"ADA-EUR","XRP":"XRP-EUR","DOT":"DOT-EUR","LINK":"LINK-EUR",
+    "MATIC":"MATIC-EUR","AVAX":"AVAX-EUR",
+  };
+
+  if(SYMBOL_MAP[t]) return SYMBOL_MAP[t];
+
+  // Fallback heuristics
+  if(type === "crypto") return t + "-EUR";
+  if(type === "etf") return t + ".AS";  // try Amsterdam first
+  if(type === "stock") return t;        // assume US if not in map
+  return t;
 }
+
 
 async function fetchWithProxy(url) {
   // Try multiple CORS proxies in order
@@ -1825,8 +1859,8 @@ async function fetchWithProxy(url) {
   return null;
 }
 
-async function fetchYahooPrice(ticker, type) {
-  var symbol = toYahooSymbol(ticker, type);
+async function fetchYahooPrice(ticker, type, customSymbol) {
+  var symbol = customSymbol || toYahooSymbol(ticker, type);
   var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?interval=1d&range=2d&includePrePost=false";
   try {
     var data = await fetchWithProxy(url);
@@ -1889,7 +1923,7 @@ async function syncAllPrices() {
   for(var i = 0; i < items.length; i++) {
     var item = items[i];
     showSyncProgress(i + 1, items.length, item.ticker);
-    var result = await fetchYahooPrice(item.ticker, item.type);
+    var result = await fetchYahooPrice(item.ticker, item.type, item.yahooSymbol||"");
     if(result.ok) {
       prices[item.ticker.toUpperCase()] = result;
       success++;
