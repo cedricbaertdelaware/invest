@@ -703,7 +703,7 @@ function getData() {
     portfolio: STATE.portfolio !== null ? STATE.portfolio : DEMO_PORTFOLIO,
     watchlist: STATE.watchlist !== null ? STATE.watchlist : DEMO_WATCHLIST,
     alerts: STATE.alerts !== null ? STATE.alerts : DEMO_ALERTS,
-    settings: STATE.settings !== null ? STATE.settings : {currency:"EUR",theme:"dark",targets:{etf:60,stock:25,crypto:15}},
+    settings: STATE.settings !== null ? STATE.settings : {currency:"EUR",theme:"dark",targets:{etf:100,stock:0,crypto:0}},
     snapshots: STATE.snapshots !== null ? STATE.snapshots : DEMO_SNAPS,
     transactions: STATE.transactions !== null ? STATE.transactions : DEMO_TRANSACTIONS,
     prices: STATE.prices !== null ? STATE.prices : {},
@@ -2035,7 +2035,7 @@ async function clearAllData() {
   if(!confirm("Echt zeker?")) return;
   // Save empty state to Firebase so demo data never comes back
   var empty = {portfolio:[],watchlist:[],alerts:[],snapshots:[]};
-  var defSettings = {currency:"EUR",theme:"dark",targets:{etf:60,stock:25,crypto:15}};
+  var defSettings = {currency:"EUR",theme:"dark",targets:{etf:100,stock:0,crypto:0}};
   ["portfolio","watchlist","alerts","snapshots","transactions","prices"].forEach(function(k){localStorage.removeItem("folio_"+k);});
   localStorage.removeItem("folio_settings");
   if(window._fb){
