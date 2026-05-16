@@ -884,8 +884,11 @@ function renderDashboard() {
     }).join("")+'</tbody></table>' :
     '<div class="empty-state"><div class="empty-icon">&#9647;</div><p>Geen posities nog — klik "+ Toevoegen"</p></div>';
 
-  // Watchlist preview
-  var wl = getData().watchlist.slice(0,4);
+  // Watchlist preview — favourites first, then rest
+  var wlAll = getData().watchlist;
+  var wlFavs = wlAll.filter(function(w){ return w.fav; });
+  var wlRest = wlAll.filter(function(w){ return !w.fav; });
+  var wl = wlFavs.concat(wlRest).slice(0,4);
   document.getElementById("dashboard-watchlist").innerHTML = wl.length ?
     wl.map(function(w){
       return '<div class="flex-center gap-8" style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="openDetail(\''+w.id+'\',\'wl\')">'+
