@@ -280,16 +280,19 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div class="view" id="view-watchlist">
         <div class="section-header mb-16">
           <div class="section-title">Watchlist</div>
-          <div class="flex gap-8" style="flex-wrap:wrap;">
+          <div class="flex gap-8" style="flex-wrap:wrap;align-items:center;">
             <div class="search-wrap">
               <span class="search-icon">&#8857;</span>
-              <input type="text" class="search-input" placeholder="Zoek..." id="watchlist-search" oninput="renderWatchlist()">
+              <input type="text" class="search-input" placeholder="Zoek ticker of naam..." id="watchlist-search" oninput="renderWatchlist()">
             </div>
             <select class="form-input form-select" style="width:130px;" id="wl-filter" onchange="renderWatchlist()">
               <option value="">Alle types</option>
               <option value="etf">ETF</option>
               <option value="stock">Aandelen</option>
               <option value="crypto">Crypto</option>
+            </select>
+            <select class="form-input form-select" style="width:140px;" id="wl-tag-filter" onchange="renderWatchlist()">
+              <option value="">Alle tags</option>
             </select>
             <button class="btn btn-primary" onclick="openAddModal('watch')">+ Toevoegen</button>
           </div>
@@ -1035,6 +1038,123 @@ var INSTRUMENT_DB = {
     description: "Smart contract platform. DeFi, NFT en Web3 infrastructuur. Proof-of-Stake since 2022. Lager energieverbruik dan Bitcoin.",
     pros: ["Grootste developer ecosysteem", "Proof-of-Stake", "Utility token"],
     cons: ["Hoge gasprijzen mogelijk", "Concurrentie Layer 1s", "Complexer dan BTC"]
+  },
+  "DFEN": {
+    name: "VanEck Defense UCITS ETF",
+    isin: "IE000YYE6WK5",
+    category: "Defence",
+    ter: 0.55,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "Wereldwijde defensiebedrijven actief in de defensie- en cyberbeveiligingssector. Rheinmetall, Leonardo, BAE… +16.6% in één jaar.",
+    pros: ["Sterke sector momentum", "Lage TOB", "Accumulerend"],
+    cons: ["Hoge TER 0.55%", "Sectorconcentratie", "Ethische overwegingen"]
+  },
+  "EUDF": {
+    name: "WisdomTree Europe Defence UCITS ETF",
+    isin: "IE0005WBPZL0",
+    category: "Defence",
+    ter: 0.40,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "Gelanceerd maart 2025, maar al uitgegroeid tot een van de grootste Europese defensie-ETFs. Belegt in Europese bedrijven met hoge omzetblootstelling aan defensie. Sluit clustermunitie en AP-mijnen uit.",
+    pros: ["Puur Europese focus", "Uitsluitingen cluster/AP", "Lage TOB"],
+    cons: ["Nieuw fonds (2025)", "Hoge TER 0.40%", "Sectorconcentratie"]
+  },
+  "CS51": {
+    name: "iShares Core Euro STOXX 50 UCITS ETF",
+    isin: "IE00B53L3W79",
+    category: "EU",
+    ter: 0.10,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "50 grootste blue-chip aandelen van de Eurozone — LVMH, SAP, Sanofi, Airbus… Goedkoopste Europa-ETF beschikbaar. Goede aanvulling op IWDA voor extra Europese blootstelling.",
+    pros: ["Ultra lage TER 0.10%", "Lage TOB", "Blue-chip Eurozone"],
+    cons: ["Slechts 50 bedrijven", "Financials/industrie-zwaar", "Minder groei dan VS"]
+  },
+  "IMAE": {
+    name: "iShares MSCI Europe UCITS ETF",
+    isin: "IE00B4K48X80",
+    category: "EU",
+    ter: 0.12,
+    tob: 0.12,
+    accumulating: true,
+    domicile: "Ierland",
+    badge: null,
+    description: "425 bedrijven uit 15 Europese landen incl. UK, Zweden, Zwitserland. Breder dan Euro Stoxx 50. MSCI Europe leverde gemiddeld 9.6% per jaar op since 1978. Betere diversificatie dan alleen Eurozone.",
+    pros: ["Breed Europa incl. UK/CH", "Lage TER 0.12%", "iShares kwaliteit"],
+    cons: ["Lagere groei dan VS", "GBP/CHF wisselkoersrisico", "Financials-zwaar"]
+  },
+  "VUSA": {
+    name: "Vanguard S&P 500 UCITS ETF",
+    isin: "IE00B3XXRP09",
+    category: "VS",
+    ter: 0.07,
+    tob: 0.12,
+    accumulating: false,
+    domicile: "Ierland",
+    badge: null,
+    description: "S&P 500 via Vanguard, distribuerend. Goedkoopste S&P 500 tracker. Let op 30% dividendbelasting als distribuerend.",
+    pros: ["Ultra lage TER 0.07%", "Vanguard betrouwbaarheid", "Lage TOB"],
+    cons: ["Distribuerend (30% div.taks)", "100% VS-concentratie"]
+  },
+  "IEMA": {
+    name: "iShares MSCI EM UCITS ETF",
+    isin: "IE00B4L5YC18",
+    category: "Opkomende markten",
+    ter: 0.18,
+    tob: 0.12,
+    accumulating: false,
+    domicile: "Ierland",
+    badge: null,
+    description: "Opkomende markten ETF van iShares. Distribuerend variant. China, India, Brazilië, Taiwan.",
+    pros: ["Brede EM dekking", "iShares liquiditeit", "Lage TOB"],
+    cons: ["Distribuerend", "Politiek risico", "Volatiel"]
+  },
+  "AAPL": {
+    name: "Apple Inc.",
+    category: "Technologie",
+    exchange: "NASDAQ",
+    description: "Grootste bedrijf ter wereld op marktkapitalisatie. iPhone, Mac, Services segment groeit sterk. <strong>Enorme cashflow</strong> en aandeleninkoop.",
+    pros: ["Sterkste brand ter wereld", "Services groei", "Massale cash terugkoop"],
+    cons: ["Premium waardering", "iPhone afhankelijkheid", "China risico"]
+  },
+  "MSFT": {
+    name: "Microsoft Corporation",
+    category: "Technologie",
+    exchange: "NASDAQ",
+    description: "Cloud (Azure), AI (Copilot/OpenAI), Office 365. Stabiele recurring revenue. Één van de meest defensieve tech-aandelen.",
+    pros: ["Azure groei", "AI-leider", "Defensief tech-profiel"],
+    cons: ["Hoge waardering", "Regulatierisico EU", "Trage innovatie consumer"]
+  },
+  "NVDA": {
+    name: "NVIDIA Corporation",
+    category: "Technologie / AI",
+    exchange: "NASDAQ",
+    description: "Dominante GPU-fabrikant voor AI-training. Datacenter segment explodeerde. <strong>Historisch rendement > 200% in 2023</strong>.",
+    pros: ["AI-infrastructuur monopolist", "Enorme marges", "Groeimotor"],
+    cons: ["Extreme waardering", "Cyclisch (chips)", "China exportbeperkingen"]
+  },
+  "SOL": {
+    name: "Solana",
+    category: "Crypto",
+    description: "High-speed blockchain. 50.000+ TPS theoretisch. DeFi en NFT ecosysteem. Concurrente van Ethereum met lagere fees.",
+    pros: ["Snelste blockchain", "Lage transactiekosten", "Groeiend ecosysteem"],
+    cons: ["Netwerkstoringen verleden", "Centralisatiezorgen", "Hoger risico dan BTC/ETH"]
+  },
+  "AB": {
+    name: "Anheuser-Busch InBev SA",
+    category: "Consumptiegoederen",
+    exchange: "Euronext Brussel",
+    description: "Grootste bierbrouwer ter wereld. Budweiser, Stella Artois, Corona... Stabiel dividendaandeel. Hoge schuldenlast na overname SABMiller.",
+    pros: ["Wereldwijd merk", "Stabiel dividend", "BEL20 liquiditeit"],
+    cons: ["Hoge schuld", "Volumedruk Westerse markten", "Valutarisico EM"]
   }
 };
 
@@ -1042,49 +1162,83 @@ function getInstrumentInfo(ticker) {
   return INSTRUMENT_DB[ticker.toUpperCase()] || null;
 }
 
+
+
 function renderWatchlist() {
   var d = getData(), watchlist = d.watchlist;
   var q = ((document.getElementById("watchlist-search")||{}).value||"").toLowerCase();
   var tf = (document.getElementById("wl-filter")||{}).value||"";
+  var tagf = (document.getElementById("wl-tag-filter")||{}).value||"";
+
+  // Populate tag filter dropdown with all unique tags
+  var tagSel = document.getElementById("wl-tag-filter");
+  if(tagSel) {
+    var allTags = [];
+    watchlist.forEach(function(w){ (w.tags||[]).forEach(function(t){ if(allTags.indexOf(t)<0) allTags.push(t); }); });
+    allTags.sort();
+    var currentVal = tagSel.value;
+    tagSel.innerHTML = '<option value="">Alle tags</option>' +
+      allTags.map(function(t){ return '<option value="'+t+'"'+(t===currentVal?' selected':'')+'>'+t+'</option>'; }).join("");
+  }
+
   var filtered = watchlist.filter(function(w){
-    return (!q||w.ticker.toLowerCase().includes(q)||w.name.toLowerCase().includes(q)) && (!tf||w.type===tf);
+    return (!q || w.ticker.toLowerCase().includes(q) || w.name.toLowerCase().includes(q)) &&
+           (!tf || w.type === tf) &&
+           (!tagf || (w.tags||[]).indexOf(tagf) >= 0);
   });
+
   if(!filtered.length) {
-    document.getElementById("watchlist-grid").innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div><p>Geen items'+(q?' voor "'+q+'"':"")+' &mdash; voeg een instrument toe</p></div>';
+    document.getElementById("watchlist-grid").innerHTML =
+      '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div><p>Geen items'+(q||tf||tagf?' gevonden voor huidige filters':" &mdash; voeg een instrument toe")+'</p></div>';
     return;
   }
+
   document.getElementById("watchlist-grid").innerHTML = filtered.map(function(w){
     var info = getInstrumentInfo(w.ticker);
     return info ? renderEnrichedCard(w, info) : renderBasicCard(w);
   }).join("");
 }
 
+
 function renderEnrichedCard(w, info) {
   var isETF = w.type === "etf";
   var tobHigh = isETF && info.tob && info.tob > 0.5;
-  var accColor = info.accumulating === false ? "var(--amber)" : "var(--green)";
+  var accColor = info.accumulating === false ? "var(--amber)" : info.accumulating === true ? "var(--green)" : "var(--text3)";
   var accLabel = info.accumulating === false ? "Distribuerend" : info.accumulating === true ? "Accumulerend" : "";
 
+  // Price display
+  var priceRow = w.currentPrice ?
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius-sm);">'+
+    '<span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;">Koers</span>'+
+    '<span style="font-size:18px;font-weight:500;font-family:var(--mono);color:var(--text);">'+fmtC(w.currentPrice)+'</span>'+
+    (w.currentPrice && w.avgPrice ?
+      '<span style="font-size:11px;margin-left:auto;'+
+      (w.currentPrice > w.avgPrice ? 'color:var(--green);">' : 'color:var(--red);">') +
+      (w.currentPrice > w.avgPrice ? '&#9650; ' : '&#9660; ') +
+      fmtPct(((w.currentPrice - w.avgPrice) / w.avgPrice) * 100) +
+      ' vs aankoop</span>' : '') +
+    '</div>' : '';
+
   var headerBadge = info.badge ?
-    '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:'+(info.badgeColor||"var(--accent)")+';color:#fff;margin-bottom:6px;display:inline-block;">'+info.badge+'</span><br>' : "";
+    '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:20px;background:'+(info.badgeColor||"var(--accent)")+';color:#fff;margin-right:6px;">'+info.badge+'</span>' : "";
 
   var categoryBadge = info.category ?
-    '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg4);color:var(--text3);border:1px solid var(--border);margin-bottom:8px;display:inline-block;">'+info.category+'</span>' : "";
+    '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg4);color:var(--text3);border:1px solid var(--border);">'+info.category+'</span>' : "";
 
   var terTobRow = (isETF && info.ter) ?
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'+
-    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:7px 10px;">'+
     '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">TER</div>'+
     '<div style="font-size:14px;font-weight:500;color:var(--green);">'+info.ter.toFixed(2)+'%</div></div>'+
-    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;'+(tobHigh?"border:1px solid rgba(242,92,122,0.3);":"")+'">'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:7px 10px;'+(tobHigh?"border:1px solid rgba(242,92,122,0.3);":"")+'">'+
     '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">TOB</div>'+
-    '<div style="font-size:14px;font-weight:500;color:'+(tobHigh?"var(--red)":"var(--green)")+';">'+info.tob.toFixed(2)+'% '+(tobHigh?"!":"")+'</div></div>'+
-    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="font-size:14px;font-weight:500;color:'+(tobHigh?"var(--red)":"var(--green)")+';">'+info.tob.toFixed(2)+'%'+(tobHigh?" !":"")+'</div></div>'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:7px 10px;">'+
     '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Type</div>'+
     '<div style="font-size:13px;font-weight:500;color:'+accColor+';">'+accLabel+'</div></div>'+
-    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:8px 10px;">'+
+    '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:7px 10px;">'+
     '<div style="font-size:10px;color:var(--text3);margin-bottom:2px;">Domicilie</div>'+
-    '<div style="font-size:13px;font-weight:500;color:var(--text);">'+info.domicile+' '+(info.domicile==="Ierland"?"✓":"")+'</div></div>'+
+    '<div style="font-size:13px;font-weight:500;color:var(--text);">'+info.domicile+(info.domicile==="Ierland"?" ✓":"")+'</div></div>'+
     '</div>' : "";
 
   var tobWarning = (isETF && info.tobWarning) ?
@@ -1099,43 +1253,46 @@ function renderEnrichedCard(w, info) {
   var prosConsRow = (info.pros || info.cons) ?
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'+
     (info.pros ? '<div><div style="font-size:10px;font-weight:500;color:var(--green);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Voordelen</div>'+
-    '<div style="font-size:11px;color:var(--text2);line-height:1.6;">'+info.pros.join(' · ')+'</div></div>' : "")+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.7;">'+info.pros.join(' &middot; ')+'</div></div>' : "")+
     (info.cons ? '<div><div style="font-size:10px;font-weight:500;color:var(--red);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Nadelen</div>'+
-    '<div style="font-size:11px;color:var(--text2);line-height:1.6;">'+info.cons.join(' · ')+'</div></div>' : "")+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.7;">'+info.cons.join(' &middot; ')+'</div></div>' : "")+
     '</div>' : "";
 
   var tagsRow = (w.tags && w.tags.length) ?
     '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'+w.tags.map(function(t){return '<span class="tag">'+t+'</span>';}).join("")+'</div>' : "";
 
-  var noteRow = w.note ? '<div class="note-text" style="margin-bottom:8px;">'+w.note+'</div>' : "";
+  var noteRow = w.note ? '<div class="note-text" style="margin-bottom:8px;">' + w.note + '</div>' : "";
 
-  return '<div class="card" style="cursor:default;border-color:'+(w.fav?"rgba(242,92,122,0.25)":"var(--card-border)")+';">'+
-    '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">'+
-    '<div style="flex:1;">'+
-    headerBadge+
-    categoryBadge+
-    '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'+
+  return '<div class="card" style="border-color:'+(w.fav?"rgba(242,92,122,0.3)":"var(--card-border)")+';">'+
+    // Header row
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">'+
+    '<div style="flex:1;min-width:0;">'+
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:6px;">'+
+    headerBadge + categoryBadge +
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">'+
     '<div style="font-size:22px;font-weight:600;color:var(--text);">'+w.ticker+'</div>'+
-    (w.fav ? '<span style="color:var(--red);font-size:16px;">&#9733;</span>' : "")+
+    (w.fav ? '<span style="color:var(--red);font-size:15px;">&#9733;</span>' : "")+
     typeBadge(w.type)+
     '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+info.name+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);">'+info.name+'</div>'+
+    isinRow+
     '</div>'+
-    '<div style="display:flex;gap:4px;" onclick="event.stopPropagation();">'+
+    '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px;">'+
     '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')" title="Bewerk">&#9998;</button>'+
     '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')" title="Verwijder">&#x2715;</button>'+
-    '</div>'+
-    '</div>'+
-    isinRow+
-    terTobRow+
-    tobWarning+
-    desc+
-    prosConsRow+
-    tagsRow+
-    noteRow+
-    '<div class="links-row" onclick="event.stopPropagation();">'+renderLinks(w.ticker,w.type)+'</div>'+
+    '</div></div>'+
+    priceRow +
+    terTobRow +
+    tobWarning +
+    desc +
+    prosConsRow +
+    tagsRow +
+    noteRow +
+    '<div class="links-row">'+renderLinks(w.ticker,w.type)+'</div>'+
     '</div>';
 }
+
 
 function renderBasicCard(w) {
   return '<div class="card" style="cursor:default;">'+
