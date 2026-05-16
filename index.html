@@ -376,7 +376,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 <!-- FIREBASE SDK (module) -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCUgQZJ5oV4URQlS8IoaiXmObh4imcFqd0",
@@ -388,13 +388,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// Enable offline persistence
+// Use persistent cache (new API, replaces enableIndexedDbPersistence)
+let db;
 try {
-  await enableIndexedDbPersistence(db);
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
 } catch(e) {
-  console.log("Persistence not available:", e.code);
+  db = getFirestore(app);
 }
 
 // ---- USER ID (no auth — fixed device key stored in localStorage) ----
@@ -665,7 +666,7 @@ function renderDashboard() {
       '<div class="metric-label">Beschikbaar cash</div>'+
       '<div class="metric-value" style="color:var(--blue);">'+fmtC(avail,0)+'</div>'+
       '<div class="metric-delta neutral">van '+fmtC(dep,0)+' gestort</div>'+
-      '<button class="btn btn-sm" style="margin-top:10px;width:100%;justify-content:center;" onclick="openAddModal('transaction')">+ Storting / Afhaling</button>'+
+      '<button class="btn btn-sm" style="margin-top:10px;width:100%;justify-content:center;" onclick="addTx()">+ Storting / Afhaling</button>'+
     '</div>'+
     '<div class="metric-card" style="border-left:3px solid var(--accent);">'+
       '<div class="metric-label">Totaal ge&#239;nvesteerd</div>'+
@@ -951,6 +952,7 @@ function openAddModal(type) {
   document.getElementById("modal-overlay").classList.add("open");
 }
 
+function addTx() { openAddModal("transaction"); }
 function transactionForm() {
   var today = new Date().toISOString().split("T")[0];
   return '<div class="form-group"><label class="form-label">Type</label>'+
