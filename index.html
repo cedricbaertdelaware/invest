@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Folio — Investment Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -402,14 +405,19 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// Use persistent cache (new Firebase API — offline support)
+// Use persistent cache with fallback to basic Firestore
 let db;
 try {
   db = initializeFirestore(app, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
   });
 } catch(e) {
-  db = getFirestore(app);
+  try {
+    db = getFirestore(app);
+  } catch(e2) {
+    db = null;
+    console.warn("Firestore init failed:", e2);
+  }
 }
 
 // ---- USER ID (no auth — fixed device key stored in localStorage) ----
@@ -1961,9 +1969,186 @@ function formatPriceAge(isoString) {
 }
 
 
+
+function renderGlossary() {
+  var el = document.getElementById("glossary-content");
+  if(!el) return;
+
+  var items = [
+    {
+      term: "TER",
+      color: "var(--red)",
+      tag: "Kosten",
+      tagColor: "var(--red-bg)",
+      tagText: "var(--red)",
+      oneliner: "De jaarlijkse beheerskost van een ETF — wordt automatisch afgetrokken van je rendement.",
+      visual: '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0;">' +
+        '<div style="background:var(--green-bg);border-radius:var(--radius-sm);padding:10px;text-align:center;"><div style="font-size:20px;font-weight:600;font-family:var(--mono);color:var(--green);">0.20%</div><div style="font-size:11px;color:var(--green);margin-top:2px;">IWDA ✓ Goed</div></div>' +
+        '<div style="background:var(--amber-bg);border-radius:var(--radius-sm);padding:10px;text-align:center;"><div style="font-size:20px;font-weight:600;font-family:var(--mono);color:var(--amber);">0.40%</div><div style="font-size:11px;color:var(--amber);margin-top:2px;">Aanvaardbaar</div></div>' +
+        '<div style="background:var(--red-bg);border-radius:var(--radius-sm);padding:10px;text-align:center;"><div style="font-size:20px;font-weight:600;font-family:var(--mono);color:var(--red);">1.50%</div><div style="font-size:11px;color:var(--red);margin-top:2px;">Actief fonds ✗</div></div>' +
+        '</div>',
+      explain: 'Stel je belegt <strong>€10.000</strong> in IWDA (TER 0.20%). Je betaalt automatisch <strong>€20 per jaar</strong> aan beheerskosten — je ziet dit nooit apart, het wordt verrekend in de koers.<br><br>Een actief beheerd fonds vraagt vaak 1.5% = <strong>€150/jaar</strong>. Over 20 jaar maakt dat door het rente-op-rente effect een enorm verschil in eindkapitaal.',
+      rule: 'Kies ETFs met TER onder 0.25% voor brede wereldindexen.',
+      ruleColor: "var(--green)"
+    },
+    {
+      term: "TOB",
+      color: "var(--amber)",
+      tag: "Belasting",
+      tagColor: "var(--amber-bg)",
+      tagText: "var(--amber)",
+      oneliner: "Belgische beurstaks — betaal je bij ELKE aankoop én verkoop, bovenop de prijs.",
+      visual: '<div style="margin:12px 0;">' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--green-bg);border-radius:var(--radius-sm);margin-bottom:6px;"><div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--green);min-width:54px;">0.12%</div><div><div style="font-size:13px;font-weight:500;color:var(--text);">Ierse ETFs (IWDA, EQQQ, EMIM…)</div><div style="font-size:11px;color:var(--text3);">Koop €1.000 → betaal €1.20 taks</div></div></div>' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--red-bg);border:1px solid rgba(242,92,122,0.3);border-radius:var(--radius-sm);margin-bottom:6px;"><div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--red);min-width:54px;">1.32%</div><div><div style="font-size:13px;font-weight:500;color:var(--text);">Belgisch geregistreerde ETFs (VWCE)</div><div style="font-size:11px;color:var(--red);">Koop €1.000 → betaal €13.20 — 11× meer!</div></div></div>' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius-sm);"><div style="font-family:var(--mono);font-size:18px;font-weight:600;color:var(--text2);min-width:54px;">0.35%</div><div><div style="font-size:13px;font-weight:500;color:var(--text);">Aandelen (ASML, UCB…)</div><div style="font-size:11px;color:var(--text3);">Koop €1.000 → betaal €3.50 taks</div></div></div>' +
+        '</div>',
+      explain: 'Je betaalt TOB bij <strong>elke aankoop én elke verkoop</strong>. Koop je VWCE voor €5.000 en verkoop je later, betaal je 2 × 1.32% = 2.64% = <strong>€132 enkel aan taks</strong>.<br><br>Dat is de reden waarom IWDA (TOB 0.12%) populairder is dan VWCE (TOB 1.32%) bij Belgische beleggers, ondanks dat VWCE breder gediversifieerd is.',
+      rule: 'Kies altijd Ierse ETFs met TOB 0.12% waar mogelijk.',
+      ruleColor: "var(--green)"
+    },
+    {
+      term: "Accumulerend vs Distribuerend",
+      color: "var(--blue)",
+      tag: "ETF type",
+      tagColor: "var(--blue-bg)",
+      tagText: "var(--blue)",
+      oneliner: "Wat er met dividenden gebeurt: automatisch herbelegd (ACC) of uitbetaald op je rekening (DIST).",
+      visual: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0;">' +
+        '<div style="border:2px solid var(--green);border-radius:var(--radius);padding:14px;"><div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px;">↑ ACCUMULEREND (ACC)</div><div style="font-size:12px;color:var(--text2);line-height:1.7;">Dividenden worden <strong>automatisch herbelegd</strong>.<br><br>✓ Geen 30% dividendbelasting<br>✓ Automatisch rente-op-rente<br>✓ Geen actie nodig</div><div style="margin-top:10px;font-size:11px;padding:5px 8px;background:var(--green-bg);border-radius:6px;color:var(--green);">Beste keuze voor Belgische beleggers</div></div>' +
+        '<div style="border:1px solid var(--border2);border-radius:var(--radius);padding:14px;"><div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px;">↓ DISTRIBUEREND (DIST)</div><div style="font-size:12px;color:var(--text2);line-height:1.7;">Dividenden worden <strong>uitbetaald op je rekening</strong>.<br><br>✗ 30% roerende voorheffing<br>✗ Zelf herbeleggen = extra kosten<br>✓ Cashflow als je inkomen nodig hebt</div><div style="margin-top:10px;font-size:11px;padding:5px 8px;background:var(--amber-bg);border-radius:6px;color:var(--amber);">Alleen nuttig bij nood aan cashflow</div></div>' +
+        '</div>',
+      explain: 'Stel een ETF ontvangt 2% dividend op jouw positie van €10.000 = €200.<br><br><strong>ACC:</strong> die €200 wordt automatisch herbelegd — geen belasting, meer aandelen.<br><br><strong>DIST:</strong> je ontvangt <strong>€140 netto</strong> (€60 gaat naar de fiscus). Als je wil herbeleggen betaal je ook nog eens TOB.',
+      rule: 'Kies altijd ACC tenzij je het geld nodig hebt als inkomen.',
+      ruleColor: "var(--green)"
+    },
+    {
+      term: "Roerende voorheffing",
+      color: "var(--red)",
+      tag: "Belasting",
+      tagColor: "var(--red-bg)",
+      tagText: "var(--red)",
+      oneliner: "30% Belgische belasting op dividenden — automatisch ingehouden door je broker.",
+      visual: '<div style="margin:12px 0;padding:14px;background:var(--bg3);border-radius:var(--radius);"><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Voorbeeld: je ontvangt €100 brutodividend</div><div style="display:flex;align-items:stretch;gap:0;border-radius:var(--radius-sm);overflow:hidden;"><div style="flex:7;padding:12px;background:var(--green-bg);text-align:center;"><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);">€70</div><div style="font-size:11px;color:var(--green);">Jij ontvangt</div></div><div style="flex:3;padding:12px;background:var(--red-bg);text-align:center;"><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--red);">€30</div><div style="font-size:11px;color:var(--red);">Fiscus</div></div></div></div>',
+      explain: 'Bij een <strong>ACC ETF</strong> zoals IWDA betaal je <strong>geen</strong> roerende voorheffing — dividenden worden intern herbelegd zonder belasting.<br><br>Bij een <strong>DIST ETF</strong> of dividendaandeel houdt Bolero automatisch 30% in voor je het uitbetaalt. Op lange termijn is dat enorm veel rendement dat je mist.',
+      rule: 'Vermijd door te kiezen voor accumulerende (ACC) ETFs.',
+      ruleColor: "var(--green)"
+    },
+    {
+      term: "Makelaarsloon (Bolero)",
+      color: "var(--text3)",
+      tag: "Kosten",
+      tagColor: "var(--bg4)",
+      tagText: "var(--text3)",
+      oneliner: "Transactiekosten die Bolero aanrekent per aankoop of verkoop.",
+      visual: '<div style="margin:12px 0;"><table style="width:100%;font-size:12px;border-collapse:collapse;"><tr style="border-bottom:1px solid var(--border);"><td style="padding:7px 0;color:var(--text2);">Euronext (BE/NL/FR) tot €2.500</td><td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text);">€7.50</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:7px 0;color:var(--text2);">Euronext €2.500 – €50.000</td><td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text);">0.30%</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:7px 0;color:var(--text2);">NYSE / NASDAQ tot $2.500</td><td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text);">$7.50</td></tr><tr><td style="padding:7px 0;color:var(--text2);">NYSE / NASDAQ $2.500 – $50.000</td><td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text);">0.30%</td></tr></table></div>',
+      explain: 'Bij €500 betaal je €7.50 makelaarsloon = <strong>1.5% extra kost</strong>. Bij €2.000 is dat 0.375%. Hoe groter het bedrag, hoe kleiner het relatieve effect.<br><br>Stel je belegt maandelijks €200: dat is €7.50 / €200 = 3.75% kost alleen al aan makelaarsloon. Spaar liever enkele maanden op en beleg dan in één keer een groter bedrag.',
+      rule: 'Beleg minimaal €1.000 per transactie om kosten onder 0.75% te houden.',
+      ruleColor: "var(--amber)"
+    },
+    {
+      term: "DCA — Dollar Cost Averaging",
+      color: "var(--accent2)",
+      tag: "Strategie",
+      tagColor: "rgba(108,99,255,0.1)",
+      tagText: "var(--accent2)",
+      oneliner: "Periodiek een vast bedrag beleggen, ongeacht de koers. De meest bewezen strategie voor particulieren.",
+      visual: '<div style="margin:12px 0;padding:14px;background:var(--bg3);border-radius:var(--radius);"><div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Voorbeeld: €200/maand in IWDA</div><table style="width:100%;font-size:12px;border-collapse:collapse;"><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 0;color:var(--text3);font-size:10px;text-transform:uppercase;">Maand</td><td style="text-align:right;color:var(--text3);font-size:10px;text-transform:uppercase;">Koers</td><td style="text-align:right;color:var(--text3);font-size:10px;text-transform:uppercase;">Aandelen gekocht</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 0;color:var(--text2);">Januari</td><td style="text-align:right;font-family:var(--mono);">€90</td><td style="text-align:right;font-family:var(--mono);color:var(--green);">2.22</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 0;color:var(--text2);">Februari (dip)</td><td style="text-align:right;font-family:var(--mono);color:var(--green);">€80</td><td style="text-align:right;font-family:var(--mono);color:var(--green);">2.50 ↑</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 0;color:var(--text2);">Maart</td><td style="text-align:right;font-family:var(--mono);">€95</td><td style="text-align:right;font-family:var(--mono);">2.11</td></tr><tr><td style="padding:6px 0;color:var(--text2);">April</td><td style="text-align:right;font-family:var(--mono);">€100</td><td style="text-align:right;font-family:var(--mono);">2.00</td></tr></table><div style="margin-top:8px;padding:6px 10px;background:var(--green-bg);border-radius:var(--radius-sm);font-size:11px;color:var(--green);">Gem. aankoopprijs: €90.80 vs gem. koers €91.25 — DCA wint</div></div>',
+      explain: 'Je belegt elke maand €200, ongeacht of de markt hoog of laag staat. Als de koers daalt koop je automatisch <strong>meer aandelen</strong> voor hetzelfde geld.<br><br>Resultaat: je gemiddelde aankoopprijs ligt altijd lager dan het gewone gemiddelde van de koersen. En je hoeft nooit te beslissen "is dit nu een goed moment?"',
+      rule: 'Gebruik de recurring storting-functie in deze app om DCA te automatiseren.',
+      ruleColor: "var(--accent2)"
+    },
+    {
+      term: "ISIN",
+      color: "var(--text3)",
+      tag: "Identificatie",
+      tagColor: "var(--bg4)",
+      tagText: "var(--text3)",
+      oneliner: "Uniek internationaal identificatienummer voor elk financieel instrument.",
+      visual: '<div style="margin:12px 0;"><div style="padding:14px;background:var(--bg3);border-radius:var(--radius);font-family:var(--mono);font-size:15px;letter-spacing:2px;color:var(--accent2);margin-bottom:8px;">IE00B4L5Y983</div><div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;"><span style="font-family:var(--mono);font-weight:600;color:var(--text);">IE</span><span style="color:var(--text2);">Landcode = Ierland (domicilie)</span><span style="font-family:var(--mono);font-weight:600;color:var(--text);">00B4L5Y983</span><span style="color:var(--text2);">Unieke identificatiecode</span></div></div>',
+      explain: 'Gebruik de ISIN om het <strong>exacte</strong> instrument op te zoeken in Bolero. Van IWDA bestaan er meerdere varianten: EUR-hedged, distribuerend, andere beurs… Alleen de ISIN garandeert dat je het juiste instrument koopt.',
+      rule: 'Controleer altijd de ISIN voor je een order plaatst in Bolero.',
+      ruleColor: "var(--amber)"
+    },
+    {
+      term: "Herbalancering",
+      color: "var(--green)",
+      tag: "Strategie",
+      tagColor: "var(--green-bg)",
+      tagText: "var(--green)",
+      oneliner: "Je portfolio terugbrengen naar de gewenste verdeling nadat koersen verschoven zijn.",
+      visual: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0;"><div style="padding:12px;background:var(--bg3);border-radius:var(--radius);"><div style="font-size:11px;color:var(--text3);margin-bottom:8px;">NA sterke aandelenstijging</div><div style="display:flex;flex-direction:column;gap:5px;"><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#38bdf8;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">ETFs</span><span style="font-family:var(--mono);color:var(--red);">45%</span></div><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#6c63ff;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">Aandelen</span><span style="font-family:var(--mono);color:var(--red);">40%</span></div><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#f5a623;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">Crypto</span><span style="font-family:var(--mono);">15%</span></div></div></div><div style="padding:12px;background:var(--bg3);border-radius:var(--radius);"><div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Na herbalancering (target)</div><div style="display:flex;flex-direction:column;gap:5px;"><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#38bdf8;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">ETFs</span><span style="font-family:var(--mono);color:var(--green);">60%</span></div><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#6c63ff;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">Aandelen</span><span style="font-family:var(--mono);color:var(--green);">25%</span></div><div style="display:flex;align-items:center;gap:8px;font-size:12px;"><div style="width:8px;height:8px;background:#f5a623;border-radius:2px;"></div><span style="flex:1;color:var(--text2);">Crypto</span><span style="font-family:var(--mono);">15%</span></div></div></div></div>',
+      explain: 'Stel je wil 60% ETFs / 25% aandelen / 15% crypto. Na een jaar zijn aandelen sterk gestegen en nemen ze nu 40% in. Je herbalanceert door deels aandelen te verkopen en ETFs bij te kopen tot je terug op 60/25/15 zit.<br><br>De <strong>Allocatie-pagina</strong> in deze app toont automatisch hoever je van je targets zit.',
+      rule: 'Herbalanceer max 1-2× per jaar om transactiekosten te beperken.',
+      ruleColor: "var(--amber)"
+    }
+  ];
+
+  var html = '<div style="margin-bottom:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">' +
+    '<div class="search-wrap"><span class="search-icon">&#8857;</span>' +
+    '<input type="text" class="search-input" id="glossary-search" placeholder="Zoek begrip..." oninput="filterGlossary()" style="width:260px;"></div>' +
+    '<span style="font-size:12px;color:var(--text3);">' + items.length + ' begrippen — klik op een kaart om te openen</span>' +
+    '</div>';
+
+  items.forEach(function(item, idx) {
+    html += '<div class="glossary-item" style="margin-bottom:10px;border:1px solid var(--card-border);border-radius:var(--radius);overflow:hidden;position:relative;">' +
+      '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--card-bg);cursor:pointer;user-select:none;" onclick="toggleGlossaryItem(this)">' +
+      '<div style="width:4px;min-width:4px;height:36px;background:' + item.color + ';border-radius:2px;flex-shrink:0;"></div>' +
+      '<div style="flex:1;min-width:0;padding-right:32px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<span style="font-size:16px;font-weight:600;color:var(--text);font-family:var(--mono);">' + item.term + '</span>' +
+      '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:' + item.tagColor + ';color:' + item.tagText + ';">' + item.tag + '</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text3);margin-top:3px;">' + item.oneliner + '</div>' +
+      '</div>' +
+      '<span style="color:var(--text3);font-size:14px;flex-shrink:0;position:absolute;right:18px;top:50%;transform:translateY(-50%);" id="garrow-' + idx + '">&#9660;</span>' +
+      '</div>' +
+      '<div class="glossary-body" id="gbody-' + idx + '" style="max-height:0;overflow:hidden;transition:max-height .35s ease;">' +
+      '<div style="padding:0 18px 18px 34px;">' +
+      item.visual +
+      '<p style="font-size:13px;color:var(--text2);line-height:1.75;margin-bottom:12px;">' + item.explain + '</p>' +
+      '<div style="display:flex;align-items:flex-start;gap:8px;padding:10px 14px;background:var(--bg3);border-left:3px solid ' + item.ruleColor + ';border-radius:0 var(--radius-sm) var(--radius-sm) 0;">' +
+      '<span style="font-size:14px;flex-shrink:0;">&#9998;</span>' +
+      '<span style="font-size:12px;color:var(--text2);">' + item.rule + '</span>' +
+      '</div></div></div>' +
+      '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+function toggleGlossaryItem(header) {
+  var parent = header.parentElement;
+  var idx = parent.querySelector('.glossary-body').id.replace('gbody-','');
+  var body = document.getElementById('gbody-' + idx);
+  var arrow = document.getElementById('garrow-' + idx);
+  if(!body) return;
+  var isOpen = body.style.maxHeight !== '0px' && body.style.maxHeight !== '';
+  body.style.maxHeight = isOpen ? '0' : '2000px';
+  if(arrow) arrow.innerHTML = isOpen ? '&#9660;' : '&#9650;';
+}
+
+function filterGlossary() {
+  var q = ((document.getElementById("glossary-search")||{}).value||"").toLowerCase();
+  document.querySelectorAll(".glossary-item").forEach(function(item) {
+    item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? "" : "none";
+  });
+}
+
 // Wait for Firebase module to be ready
 window._initApp = initApp;
-if(window._fbReady) initApp();
+if(window._fbReady) {
+  initApp();
+} else {
+  // Safety fallback: if Firebase module takes too long or fails, start anyway
+  setTimeout(function() {
+    if(!window._fbReady) {
+      console.warn("Firebase module timeout — starting without Firebase");
+      window._fb = null;
+      initApp();
+    }
+  }, 4000);
+}
 </script>
 </body>
 </html>
