@@ -258,11 +258,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div class="view" id="view-portfolio">
         <div class="section-header">
           <div class="section-title">Mijn Posities</div>
-          <div class="flex gap-8">
+          <div class="flex gap-8" style="flex-wrap:wrap;align-items:center;">
             <div class="search-wrap">
               <span class="search-icon">&#8857;</span>
               <input type="text" class="search-input" placeholder="Zoek ticker..." id="portfolio-search" oninput="renderPortfolio()">
             </div>
+            <div id="portfolio-sort-wrap"></div>
             <button class="btn btn-primary" onclick="openAddModal('position')">+ Positie</button>
           </div>
         </div>
@@ -303,6 +304,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
             <select class="form-input form-select" style="width:140px;" id="wl-tag-filter" onchange="renderWatchlist()">
               <option value="">Alle tags</option>
             </select>
+            <div id="watchlist-sort-wrap"></div>
             <button class="btn btn-primary" onclick="openAddModal('watch')">+ Toevoegen</button>
           </div>
         </div>
@@ -313,7 +315,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div class="view" id="view-alerts">
         <div class="section-header mb-16">
           <div class="section-title">Alerts</div>
-          <button class="btn btn-primary" onclick="openAddModal('alert')">+ Alert</button>
+          <div class="flex gap-8" style="align-items:center;">
+            <div id="alerts-sort-wrap"></div>
+            <button class="btn btn-primary" onclick="openAddModal('alert')">+ Alert</button>
+          </div>
         </div>
         <div id="alerts-list"></div>
       </div>
@@ -508,6 +513,13 @@ const DEMO_SNAPS = (function(){
   }
   return s;
 })();
+
+// ---- SORT STATE (UI only, not persisted) ----
+var SORT = {
+  portfolio: { field: "value", dir: "desc" },
+  watchlist:  { field: "ticker", dir: "asc" },
+  alerts:     { field: "ticker", dir: "asc" },
+};
 
 // ---- IN-MEMORY STATE (loaded from Firebase) ----
 var STATE = {
@@ -859,38 +871,84 @@ function renderBriefing() {
 }
 
 function renderPortfolio() {
-  var d=getData(), portfolio=d.portfolio;
-  var q=(document.getElementById("portfolio-search")||{}).value||"";
-  q=q.toLowerCase();
-  var filtered=portfolio.filter(function(p){return !q||p.ticker.toLowerCase().includes(q)||p.name.toLowerCase().includes(q);});
-  var tv=totalValue();
-  document.getElementById("portfolio-table").innerHTML = filtered.length ?
-    '<table class="data-table" style="min-width:800px;"><thead><tr><th>Instrument</th><th>Type</th><th class="right">Aantal</th><th class="right">Gem.prijs</th><th class="right">Huidig</th><th class="right">Waarde</th><th class="right">W/V &#8364;</th><th class="right">W/V%</th><th class="right">Alloc%</th><th></th></tr></thead><tbody>'+
-    filtered.map(function(p){
-      var r=calcPos(p), alloc=tv>0?(r.cv/tv*100):0;
-      return '<tr onclick="openDetail(\''+p.id+'\',\'pos\')" style="cursor:pointer;">'+
-        '<td><div class="asset-row"><div class="asset-avatar av-'+p.type+'">'+p.ticker.slice(0,3)+'</div>'+
-        '<div><div class="flex-center" style="gap:4px;"><span class="asset-name">'+p.ticker+'</span>'+
-          '<span onclick="event.stopPropagation();toggleFav(\''+p.id+'\',\'pos\')" '+
-          'style="cursor:pointer;font-size:13px;color:'+(p.fav?'var(--red)':'var(--text3)')+';line-height:1;" '+
-          'onmouseover="this.style.color=\'var(--red)\'" '+
-          'onmouseout="this.style.color=\''+(p.fav?'var(--red)':'var(--text3)')+'\'">'+
-          (p.fav?'&#9733;':'&#9734;')+'</span></div>'+'</div><div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>'+
-        '<td>'+typeBadge(p.type)+'</td>'+
-        '<td class="right mono">'+p.qty+'</td>'+
-        '<td class="right mono">'+fmtC(p.avgPrice)+'</td>'+
-        '<td class="right mono">'+fmtC(p.currentPrice)+'</td>'+
-        '<td class="right mono">'+fmtC(r.cv)+'</td>'+
-        '<td class="right"><span class="'+cc(r.pl)+'">'+(r.pl>=0?"+":"")+fmtC(r.pl)+'</span></td>'+
-        '<td class="right"><span class="'+(r.pp>=0?"pos-bg":"neg-bg")+'">'+fmtPct(r.pp)+'</span></td>'+
-        '<td class="right" style="width:90px;"><div style="font-size:11px;font-family:var(--mono);margin-bottom:3px;">'+alloc.toFixed(1)+'%</div><div class="progress-bar"><div class="progress-fill" style="width:'+alloc+'%;"></div></div></td>'+
-        '<td class="right" onclick="event.stopPropagation();" style="white-space:nowrap;">'+
-        '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+p.id+'\',\'pos\')" title="Bewerk">&#9998;</button>'+
-        '<button class="btn btn-icon btn-sm btn-danger" onclick="deletePosition(\''+p.id+'\')" title="Verwijder">&#x2715;</button></td>'+
-        '</tr>';
-    }).join("")+'</tbody></table>' :
-    '<div class="empty-state"><div class="empty-icon">&#9647;</div><p>'+(q?'Geen resultaten voor "'+q+'"':"Voeg je eerste positie toe")+'</p></div>';
+  var d = getData(), portfolio = d.portfolio;
+  var q = (document.getElementById("portfolio-search")||{}).value||"";
+  q = q.toLowerCase();
+  var tv = totalValue();
+
+  // Filter
+  var filtered = portfolio.filter(function(p){
+    return !q || p.ticker.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
+  });
+
+  // Sort
+  filtered = sortItems(filtered, "portfolio", {
+    ticker:  function(p){ return p.ticker; },
+    name:    function(p){ return p.name; },
+    value:   function(p){ return p.qty * p.currentPrice; },
+    pl:      function(p){ return calcPos(p).pl; },
+    plpct:   function(p){ return calcPos(p).pp; },
+    alloc:   function(p){ return tv > 0 ? (p.qty*p.currentPrice/tv) : 0; },
+    qty:     function(p){ return p.qty; },
+    current: function(p){ return p.currentPrice; },
+  });
+
+  var sortDd = sortDropdown("portfolio", [
+    {value:"ticker",  label:"Ticker"},
+    {value:"name",    label:"Naam"},
+    {value:"value",   label:"Waarde"},
+    {value:"pl",      label:"W/V €"},
+    {value:"plpct",   label:"W/V %"},
+    {value:"alloc",   label:"Allocatie"},
+    {value:"current", label:"Koers"},
+  ]);
+
+  // Update sort dropdown in header (inject into section header)
+  var sortWrap = document.getElementById("portfolio-sort-wrap");
+  if(sortWrap) sortWrap.innerHTML = sortDd;
+
+  if(!filtered.length) {
+    document.getElementById("portfolio-table").innerHTML =
+      '<div class="empty-state"><div class="empty-icon">&#9647;</div><p>' +
+      (q ? 'Geen resultaten voor "'+q+'"' : "Voeg je eerste positie toe") + "</p></div>";
+    return;
+  }
+
+  document.getElementById("portfolio-table").innerHTML =
+    '<table class="data-table" style="min-width:800px;"><thead><tr>' +
+    '<th>Instrument</th><th>Type</th><th class="right">Aantal</th>' +
+    '<th class="right">Gem.prijs</th><th class="right">Huidig</th>' +
+    '<th class="right">Waarde</th><th class="right">W/V &#8364;</th>' +
+    '<th class="right">W/V%</th><th class="right">Alloc%</th><th></th>' +
+    '</tr></thead><tbody>' +
+    filtered.map(function(p) {
+      var r = calcPos(p), alloc = tv > 0 ? (r.cv/tv*100) : 0;
+      return '<tr onclick="openDetail(\''+p.id+'\',\'pos\')" style="cursor:pointer;">' +
+        '<td><div class="asset-row"><div class="asset-avatar av-'+p.type+'">'+p.ticker.slice(0,3)+'</div>' +
+        '<div><div class="flex-center" style="gap:4px;"><span class="asset-name">'+p.ticker+'</span>' +
+        '<span onclick="event.stopPropagation();toggleFav(\''+p.id+'\',\'pos\')" ' +
+        'style="cursor:pointer;font-size:13px;color:'+(p.fav?'var(--red)':'var(--text3)')+';line-height:1;" ' +
+        'onmouseover="this.style.color=\'var(--red)\'" ' +
+        'onmouseout="this.style.color=\''+(p.fav?'var(--red)':'var(--text3)')+'\'">'+
+        (p.fav?'&#9733;':'&#9734;')+'</span></div>' +
+        '<div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>' +
+        '<td>'+typeBadge(p.type)+'</td>' +
+        '<td class="right mono">'+p.qty+'</td>' +
+        '<td class="right mono">'+fmtC(p.avgPrice)+'</td>' +
+        '<td class="right mono">'+fmtC(p.currentPrice)+'</td>' +
+        '<td class="right mono">'+fmtC(r.cv)+'</td>' +
+        '<td class="right"><span class="'+cc(r.pl)+'">'+(r.pl>=0?"+":"")+fmtC(r.pl)+'</span></td>' +
+        '<td class="right"><span class="'+(r.pp>=0?"pos-bg":"neg-bg")+'">'+fmtPct(r.pp)+'</span></td>' +
+        '<td class="right" style="width:90px;">' +
+        '<div style="font-size:11px;font-family:var(--mono);margin-bottom:3px;">'+alloc.toFixed(1)+'%</div>' +
+        '<div class="progress-bar"><div class="progress-fill" style="width:'+alloc+'%;"></div></div></td>' +
+        '<td class="right" onclick="event.stopPropagation();" style="white-space:nowrap;">' +
+        '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+p.id+'\',\'pos\')">&#9998;</button>' +
+        '<button class="btn btn-icon btn-sm btn-danger" onclick="deletePosition(\''+p.id+'\')">&#x2715;</button>' +
+        '</td></tr>';
+    }).join("") + '</tbody></table>';
 }
+
 
 function renderAllocation() {
   var d=getData(), portfolio=d.portfolio, settings=d.settings;
@@ -1196,26 +1254,45 @@ function renderWatchlist() {
   var tf = (document.getElementById("wl-filter")||{}).value||"";
   var tagf = (document.getElementById("wl-tag-filter")||{}).value||"";
 
-  // Populate tag filter dropdown with all unique tags
+  // Populate tag dropdown
   var tagSel = document.getElementById("wl-tag-filter");
   if(tagSel) {
     var allTags = [];
     watchlist.forEach(function(w){ (w.tags||[]).forEach(function(t){ if(allTags.indexOf(t)<0) allTags.push(t); }); });
     allTags.sort();
-    var currentVal = tagSel.value;
+    var curTag = tagSel.value;
     tagSel.innerHTML = '<option value="">Alle tags</option>' +
-      allTags.map(function(t){ return '<option value="'+t+'"'+(t===currentVal?' selected':'')+'>'+t+'</option>'; }).join("");
+      allTags.map(function(t){ return '<option value="'+t+'"'+(t===curTag?" selected":"")+">"+t+"</option>"; }).join("");
   }
 
+  // Filter
   var filtered = watchlist.filter(function(w){
     return (!q || w.ticker.toLowerCase().includes(q) || w.name.toLowerCase().includes(q)) &&
            (!tf || w.type === tf) &&
            (!tagf || (w.tags||[]).indexOf(tagf) >= 0);
   });
 
+  // Sort
+  filtered = sortItems(filtered, "watchlist", {
+    ticker: function(w){ return w.ticker; },
+    name:   function(w){ return w.name; },
+    type:   function(w){ return w.type; },
+    fav:    function(w){ return w.fav ? 0 : 1; },
+  });
+
+  // Inject sort dropdown
+  var sortWrap = document.getElementById("watchlist-sort-wrap");
+  if(sortWrap) sortWrap.innerHTML = sortDropdown("watchlist", [
+    {value:"ticker", label:"Ticker"},
+    {value:"name",   label:"Naam"},
+    {value:"type",   label:"Type"},
+    {value:"fav",    label:"Favorieten eerst"},
+  ]);
+
   if(!filtered.length) {
     document.getElementById("watchlist-grid").innerHTML =
-      '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div><p>Geen items'+(q||tf||tagf?' gevonden voor huidige filters':" &mdash; voeg een instrument toe")+'</p></div>';
+      '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon">&#9672;</div>' +
+      '<p>Geen items'+(q||tf||tagf?" voor huidige filters":" &mdash; voeg een instrument toe")+'</p></div>';
     return;
   }
 
@@ -1224,6 +1301,7 @@ function renderWatchlist() {
     return info ? renderEnrichedCard(w, info) : renderBasicCard(w);
   }).join("");
 }
+
 
 
 function renderEnrichedCard(w, info) {
@@ -1367,26 +1445,53 @@ function renderBasicCard(w) {
 
 
 function renderAlerts() {
-  var alerts=getData().alerts;
-  var TMAP={price_above:"Prijs boven",price_below:"Prijs onder",alloc_above:"Allocatie boven",dividend:"Dividend reminder",note:"Notitie alert"};
-  document.getElementById("alerts-list").innerHTML = alerts.length ?
-    alerts.map(function(a){
-      var ic=a.type==="price_above"?"&#9650;":a.type==="price_below"?"&#9660;":"&#9678;";
-      var cl=a.type==="price_above"?"var(--green)":a.type==="price_below"?"var(--red)":"var(--amber)";
-      return '<div class="card mb-16" style="opacity:'+(a.active?1:0.5)+';">'+
-        '<div class="flex-center gap-12">'+
-        '<div style="font-size:22px;color:'+cl+';">'+ic+'</div>'+
-        '<div style="flex:1;"><div class="flex-center gap-8">'+
-        '<span style="font-size:14px;font-weight:500;">'+a.ticker+'</span>'+
-        '<span style="font-size:12px;color:var(--text3);">'+(TMAP[a.type]||a.type)+'</span>'+
-        (a.type!=="dividend"&&a.type!=="note"?'<span style="font-size:13px;font-family:var(--mono);">'+fmtC(a.value)+'</span>':"")+
-        '</div>'+(a.note?'<div class="note-text" style="margin-top:2px;">'+a.note+'</div>':"")+'</div>'+
-        '<div class="flex gap-8">'+
-        '<button class="btn btn-sm" onclick="toggleAlert(\''+a.id+'\')">'+(a.active?"Deactiveer":"Activeer")+'</button>'+
-        '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteAlert(\''+a.id+'\')">&#x2715;</button></div></div></div>';
-    }).join("") :
-    '<div class="empty-state"><div class="empty-icon">&#9678;</div><p>Geen alerts ingesteld</p></div>';
+  var alerts = getData().alerts;
+  var TMAP = {price_above:"Prijs boven",price_below:"Prijs onder",alloc_above:"Allocatie boven",dividend:"Dividend reminder",note:"Notitie alert"};
+
+  // Sort
+  var sorted = sortItems(alerts, "alerts", {
+    ticker:  function(a){ return a.ticker; },
+    type:    function(a){ return a.type; },
+    value:   function(a){ return a.value || 0; },
+    active:  function(a){ return a.active ? 0 : 1; },
+  });
+
+  // Inject sort dropdown
+  var sortWrap = document.getElementById("alerts-sort-wrap");
+  if(sortWrap) sortWrap.innerHTML = sortDropdown("alerts", [
+    {value:"ticker", label:"Ticker"},
+    {value:"type",   label:"Type"},
+    {value:"value",  label:"Drempelwaarde"},
+    {value:"active", label:"Actief eerst"},
+  ]);
+
+  if(!sorted.length) {
+    document.getElementById("alerts-list").innerHTML =
+      '<div class="empty-state"><div class="empty-icon">&#9678;</div><p>Geen alerts ingesteld</p></div>';
+    return;
+  }
+
+  document.getElementById("alerts-list").innerHTML = sorted.map(function(a) {
+    var ic = a.type==="price_above"?"&#9650;":a.type==="price_below"?"&#9660;":"&#9678;";
+    var cl = a.type==="price_above"?"var(--green)":a.type==="price_below"?"var(--red)":"var(--amber)";
+    return '<div class="card mb-16" style="opacity:'+(a.active?1:0.5)+';">' +
+      '<div class="flex-center gap-12">' +
+      '<div style="font-size:22px;color:'+cl+';">'+ic+'</div>' +
+      '<div style="flex:1;">' +
+      '<div class="flex-center gap-8">' +
+      '<span style="font-size:14px;font-weight:500;">'+a.ticker+'</span>' +
+      '<span style="font-size:12px;color:var(--text3);">'+(TMAP[a.type]||a.type)+'</span>' +
+      (a.type!=="dividend"&&a.type!=="note"?'<span style="font-size:13px;font-family:var(--mono);">'+fmtC(a.value)+'</span>':"")+
+      '</div>' +
+      (a.note?'<div class="note-text" style="margin-top:2px;">'+a.note+'</div>':"")+
+      '</div>' +
+      '<div class="flex gap-8">' +
+      '<button class="btn btn-sm" onclick="toggleAlert(\''+a.id+'\')">'+(a.active?"Deactiveer":"Activeer")+'</button>' +
+      '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteAlert(\''+a.id+'\')">&#x2715;</button>' +
+      '</div></div></div>';
+  }).join("");
 }
+
 
 function renderSettings() {
   var s=getData().settings;
@@ -2217,6 +2322,49 @@ async function toggleFav(id, type) {
     var item2 = arr2.find(function(w){ return w.id === id; });
     if(item2) { item2.fav = !item2.fav; await saveKey("watchlist", arr2); renderWatchlist(); }
   }
+}
+
+
+// ---- SORT HELPERS ----
+function setSort(view, field, dir) {
+  if(SORT[view].field === field && dir === undefined) {
+    SORT[view].dir = SORT[view].dir === "asc" ? "desc" : "asc";
+  } else {
+    SORT[view].field = field;
+    SORT[view].dir = dir || "asc";
+  }
+  // Re-render the current view
+  var renders = { portfolio: renderPortfolio, watchlist: renderWatchlist, alerts: renderAlerts };
+  if(renders[view]) renders[view]();
+  // Sync dropdown UI
+  var sel = document.getElementById("sort-" + view);
+  if(sel) sel.value = SORT[view].field + "-" + SORT[view].dir;
+}
+
+function sortItems(arr, view, calcFns) {
+  var s = SORT[view];
+  var fn = calcFns[s.field] || function(x){ return x[s.field] || ""; };
+  return arr.slice().sort(function(a, b) {
+    var av = fn(a), bv = fn(b);
+    if(typeof av === "string") av = av.toLowerCase();
+    if(typeof bv === "string") bv = bv.toLowerCase();
+    if(av < bv) return s.dir === "asc" ? -1 : 1;
+    if(av > bv) return s.dir === "asc" ? 1 : -1;
+    return 0;
+  });
+}
+
+function sortDropdown(view, options) {
+  var current = SORT[view].field + "-" + SORT[view].dir;
+  return '<select class="form-input form-select" id="sort-' + view + '" ' +
+    'onchange="var p=this.value.lastIndexOf(\'-\');setSort(\'' + view + '\',this.value.slice(0,p),this.value.slice(p+1))" ' +
+    'style="width:200px;font-size:12px;">' +
+    options.map(function(o) {
+      return '<option value="' + o.value + '-asc"' + (current === o.value+"-asc" ? " selected" : "") + ">" +
+             o.label + " ↑</option>" +
+             '<option value="' + o.value + '-desc"' + (current === o.value+"-desc" ? " selected" : "") + ">" +
+             o.label + " ↓</option>";
+    }).join("") + "</select>";
 }
 
 // Wait for Firebase module to be ready
