@@ -891,10 +891,27 @@ function renderDashboard() {
   var wl = wlFavs.concat(wlRest).slice(0,4);
   document.getElementById("dashboard-watchlist").innerHTML = wl.length ?
     wl.map(function(w){
-      return '<div class="flex-center gap-8" style="padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="openDetail(\''+w.id+'\',\'wl\')">'+
+      var lp = getPrice(w.ticker);
+      var dp = (lp && lp.ok) ? lp.price : (w.currentPrice || null);
+      return '<div style="padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="openDetail(\''+w.id+'\',\'wl\')">'+
+        '<div class="flex-center gap-8" style="margin-bottom:'+(dp?'3':'0')+'px;">'+
         '<div class="asset-avatar av-'+w.type+'">'+w.ticker.slice(0,3)+'</div>'+
-        '<div style="flex:1;min-width:0;"><div class="asset-name">'+w.ticker+'</div><div class="asset-sub truncate">'+w.name+'</div></div>'+
-        typeBadge(w.type)+'</div>';
+        '<div style="flex:1;min-width:0;">'+
+        '<div style="display:flex;align-items:center;gap:5px;">'+
+        '<span class="asset-name">'+w.ticker+'</span>'+
+        '<span onclick="event.stopPropagation();toggleFav(\''+w.id+'\',\'wl\')" '+
+        'style="cursor:pointer;font-size:13px;color:'+(w.fav?'var(--red)':'var(--text3)')+';line-height:1;" '+
+        'onmouseover="this.style.color=\'var(--red)\'" '+
+        'onmouseout="this.style.color=\''+(w.fav?'var(--red)':'var(--text3)')+'\'">'+(w.fav?'&#9733;':'&#9734;')+'</span>'+
+        '</div>'+
+        '<div class="asset-sub truncate">'+w.name+'</div></div>'+
+        (dp ?
+          '<div style="text-align:right;flex-shrink:0;">'+
+          '<div style="font-size:13px;font-weight:500;font-family:var(--mono);color:var(--text);">'+fmtC(dp)+'</div>'+
+          (lp && lp.ok ? '<div style="font-size:10px;font-family:var(--mono);color:'+(lp.changePct>=0?'var(--green)':'var(--red)')+';">'+(lp.changePct>=0?'&#9650;':'&#9660;')+' '+fmtPct(lp.changePct)+'</div>' : '')+
+          '</div>' :
+          '<div style="flex-shrink:0;">'+typeBadge(w.type)+'</div>')+
+        '</div></div>';
     }).join("") : '<div class="empty-state" style="padding:16px;"><p>Geen items</p></div>';
 
   // Alerts preview
