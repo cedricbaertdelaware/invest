@@ -475,12 +475,7 @@ const DEMO_ALERTS = [
   {id:"a2",ticker:"BTC",type:"price_below",value:75000,note:"DCA moment",active:true},
   {id:"a3",ticker:"ASML",type:"price_above",value:750.00,note:"Take profit",active:true},
 ];
-const DEMO_TRANSACTIONS = [
-  {id:"t1", type:"deposit", amount:5000, date:"2024-01-15", note:"Startkapitaal"},
-  {id:"t2", type:"deposit", amount:3000, date:"2024-04-01", note:"Maandelijkse storting"},
-  {id:"t3", type:"deposit", amount:2000, date:"2024-07-10", note:""},
-  {id:"t4", type:"deposit", amount:1500, date:"2025-01-01", note:"Nieuwjaarsinvestering"},
-];
+const DEMO_TRANSACTIONS = [];  // geen demo data — gebruiker vult zelf in
 
 const DEMO_SNAPS = (function(){
   var s=[]; var v=10200;
@@ -771,7 +766,7 @@ function renderTransactionSummary() {
       '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+( isDeposit?"Storting":"Afhaling")+'</div>'+
       '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+'</div></div>'+
       '<div style="font-family:var(--mono);font-size:13px;color:'+( isDeposit?"var(--green)":"var(--red)")+';">'+( isDeposit?"+":"-")+fmtC(t.amount,0)+'</div>'+
-      '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteTransaction(\'\'\'"+t.id+"\'\'\')" style="margin-left:4px;">&#x2715;</button>'+
+      '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>'+
       '</div>';
   }).join("");
 }
@@ -1002,6 +997,10 @@ async function deleteTransaction(id) {
   var d = getData();
   await saveKey("transactions", d.transactions.filter(function(t){return t.id!==id;}));
   renderDashboard();
+}
+function deleteTx(btn) {
+  var id = btn.getAttribute("data-id");
+  deleteTransaction(id);
 }
 function openEditModal(id,type) {
   var d=getData();
