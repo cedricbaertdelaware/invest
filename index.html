@@ -513,13 +513,16 @@ async function loadKey(key) {
   // Try Firebase first
   if(window._fb) {
     var val = await window._fb.load(key);
-    if(val !== null) { STATE[key] = val; return val; }
+    // val can be [] (empty array) or {} — that's valid, only skip if truly null/undefined
+    if(val !== null && val !== undefined) { STATE[key] = val; return val; }
   }
   // Fallback to localStorage
   try {
     var raw = localStorage.getItem("folio_" + key);
-    if(raw) { var v = JSON.parse(raw); STATE[key] = v; return v; }
+    if(raw !== null) { var v = JSON.parse(raw); STATE[key] = v; return v; }
   } catch(e) {}
+  // Nothing found anywhere — leave STATE[key] as null so getData() uses demo data
+  // (only on very first ever visit before any data exists)
   return null;
 }
 
@@ -533,11 +536,11 @@ async function saveKey(key, value) {
 
 function getData() {
   return {
-    portfolio: STATE.portfolio || DEMO_PORTFOLIO,
-    watchlist: STATE.watchlist || DEMO_WATCHLIST,
-    alerts: STATE.alerts || DEMO_ALERTS,
-    settings: STATE.settings || {currency:"EUR",theme:"dark",targets:{etf:60,stock:25,crypto:15}},
-    snapshots: STATE.snapshots || DEMO_SNAPS,
+    portfolio: STATE.portfolio !== null ? STATE.portfolio : DEMO_PORTFOLIO,
+    watchlist: STATE.watchlist !== null ? STATE.watchlist : DEMO_WATCHLIST,
+    alerts: STATE.alerts !== null ? STATE.alerts : DEMO_ALERTS,
+    settings: STATE.settings !== null ? STATE.settings : {currency:"EUR",theme:"dark",targets:{etf:60,stock:25,crypto:15}},
+    snapshots: STATE.snapshots !== null ? STATE.snapshots : DEMO_SNAPS,
   };
 }
 
@@ -1082,13 +1085,17 @@ async function importJSON(event) {
 async function clearAllData() {
   if(!confirm("ALLE data wissen? Dit verwijdert ook de Firebase data!")) return;
   if(!confirm("Echt zeker?")) return;
-  ["portfolio","watchlist","alerts","settings","snapshots"].forEach(function(k){localStorage.removeItem("folio_"+k);});
+  // Save empty state to Firebase so demo data never comes back
+  var empty = {portfolio:[],watchlist:[],alerts:[],snapshots:[]};
+  var defSettings = {currency:"EUR",theme:"dark",targets:{etf:60,stock:25,crypto:15}};
+  ["portfolio","watchlist","alerts","snapshots"].forEach(function(k){localStorage.removeItem("folio_"+k);});
+  localStorage.removeItem("folio_settings");
   if(window._fb){
-    await window._fb.delete("portfolio");
-    await window._fb.delete("watchlist");
-    await window._fb.delete("alerts");
-    await window._fb.delete("settings");
-    await window._fb.delete("snapshots");
+    await window._fb.save("portfolio",[]);
+    await window._fb.save("watchlist",[]);
+    await window._fb.save("alerts",[]);
+    await window._fb.save("snapshots",[]);
+    await window._fb.save("settings",defSettings);
   }
   location.reload();
 }
