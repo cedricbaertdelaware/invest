@@ -576,7 +576,7 @@ function setSyncStatus(state) {
   const txt = document.getElementById("sync-status");
   if (!dot || !txt) return;
   dot.className = "sync-dot" + (state === "syncing" ? " syncing" : state === "offline" ? " offline" : "");
-  txt.textContent = state === "syncing" ? "opslaan..." : state === "offline" ? "offline" : "gesynchroniseerd";
+  txt.textContent = state === "syncing" ? "opslaan..." : state === "offline" ? "offline" : ""; // timestamp set by syncAllPrices
 }
 window.setSyncStatus = setSyncStatus;
 
@@ -743,8 +743,16 @@ function fmtDelta(v){ return '<span class="'+cc(v)+'">'+fmtPct(v)+"</span>"; }
 function typeLabel(t){ return {etf:"ETF",stock:"Aandeel",crypto:"Crypto"}[t]||t; }
 function typeBadge(t){ return '<span class="badge badge-'+t+'">'+typeLabel(t)+"</span>"; }
 function calcPos(p){
-  var cv=p.qty*p.currentPrice, cb=p.qty*p.avgPrice, pl=cv-cb, pp=cb>0?(pl/cb)*100:0;
-  return {cv:cv, cb:cb, pl:pl, pp:pp};
+  var cv = p.qty * p.currentPrice;
+  var cb = p.qty * p.avgPrice;
+  var costs = p.costs || 0;
+  var pl = cv - cb - costs;           // net P/L after costs
+  var plGross = cv - cb;              // gross P/L before costs
+  var pp = cb > 0 ? (pl / (cb + costs)) * 100 : 0;
+  var breakEven = cb > 0 ? ((cb + costs) / p.qty) : p.avgPrice; // price needed to break even
+  var breakEvenReached = p.currentPrice >= breakEven;
+  var costsRecovered = plGross >= costs; // same as breakEvenReached
+  return { cv:cv, cb:cb, pl:pl, plGross:plGross, pp:pp, costs:costs, breakEven:breakEven, breakEvenReached:breakEvenReached };
 }
 function totalValue(){
   return getData().portfolio.reduce(function(s,p){ return s+p.qty*p.currentPrice; },0);
@@ -870,19 +878,32 @@ function renderDashboard() {
   // Positions
   var top5 = portfolio.slice().sort(function(a,b){return (b.qty*b.currentPrice)-(a.qty*a.currentPrice);}).slice(0,5);
   document.getElementById("dashboard-positions").innerHTML = top5.length ?
-    '<table class="data-table" style="min-width:500px;"><thead><tr><th>Instrument</th><th>Type</th><th class="right">Waarde</th><th class="right">W/V%</th><th class="right">Links</th></tr></thead><tbody>'+
+    '<table class="data-table" style="min-width:500px;"><thead><tr>' +
+    '<th>Instrument</th><th>Type</th><th class="right">Aantal</th>' +
+    '<th class="right">Koers</th><th class="right">Waarde</th>' +
+    '<th class="right">W/V%</th><th class="right">Kosten</th><th class="right">Links</th>' +
+    '</tr></thead><tbody>' +
     top5.map(function(p){
-      var r=calcPos(p);
-      return '<tr onclick="openDetail(\''+p.id+'\',\'pos\')" style="cursor:pointer;">'+
-        '<td><div class="asset-row"><div class="asset-avatar av-'+p.type+'">'+p.ticker.slice(0,3)+'</div>'+
-        '<div><div class="asset-name">'+p.ticker+(p.fav?" &#9733;":"")+'</div><div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>'+
-        '<td>'+typeBadge(p.type)+'</td>'+
-        '<td class="right mono">'+fmtC(r.cv)+'</td>'+
-        '<td class="right">'+fmtDelta(r.pp)+'</td>'+
-        '<td class="right" onclick="event.stopPropagation();"><div class="links-row" style="justify-content:flex-end;">'+renderLinks(p.ticker,p.type)+'</div></td>'+
+      var r = calcPos(p);
+      var beTag = r.costs > 0 ?
+        '<span title="Break-even: '+fmtC(r.breakEven)+'" style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:8px;background:'+(r.breakEvenReached?'var(--green-bg)':'var(--red-bg)')+';color:'+(r.breakEvenReached?'var(--green)':'var(--red)')+';">'+(r.breakEvenReached?'BE &#10003;':'BE &#x2715;')+'</span>' : '';
+      return '<tr onclick="openDetail(\''+p.id+'\',\'pos\')" style="cursor:pointer;">' +
+        '<td><div class="asset-row"><div class="asset-avatar av-'+p.type+'">'+p.ticker.slice(0,3)+'</div>' +
+        '<div><div class="asset-name">'+p.ticker+(p.fav?' &#9733;':'')+'</div>' +
+        '<div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>' +
+        '<td>'+typeBadge(p.type)+'</td>' +
+        '<td class="right mono" style="color:var(--text3);">'+p.qty+'</td>' +
+        '<td class="right">' +
+          '<div style="font-size:13px;font-weight:500;font-family:var(--mono);">'+fmtC(p.currentPrice)+'</div>' +
+          (function(){ var lp=getPrice(p.ticker); return lp&&lp.ok ? '<div style="font-size:10px;font-family:var(--mono);color:'+(lp.changePct>=0?'var(--green)':'var(--red)')+';">'+(lp.changePct>=0?'&#9650;':'&#9660;')+' '+fmtPct(lp.changePct)+'</div>' : ''; })() +
+        '</td>' +
+        '<td class="right mono">'+fmtC(r.cv)+'</td>' +
+        '<td class="right">'+fmtDelta(r.pp)+'</td>' +
+        '<td class="right">'+beTag+'</td>' +
+        '<td class="right" onclick="event.stopPropagation();"><div class="links-row" style="justify-content:flex-end;">'+renderLinks(p.ticker,p.type)+'</div></td>' +
         '</tr>';
-    }).join("")+'</tbody></table>' :
-    '<div class="empty-state"><div class="empty-icon">&#9647;</div><p>Geen posities nog — klik "+ Toevoegen"</p></div>';
+    }).join('') + '</tbody></table>' :
+    '<div class="empty-state"><div class="empty-icon">&#9647;</div><p>Geen posities nog &#8212; klik &quot;+ Toevoegen&quot;</p></div>';
 
   // Watchlist preview — favourites first, then rest
   var wlAll = getData().watchlist;
@@ -1057,8 +1078,9 @@ function renderPortfolio() {
     '<table class="data-table" style="min-width:800px;"><thead><tr>' +
     '<th>Instrument</th><th>Type</th><th class="right">Aantal</th>' +
     '<th class="right">Gem.prijs</th><th class="right">Huidig</th>' +
-    '<th class="right">Waarde</th><th class="right">W/V &#8364;</th>' +
-    '<th class="right">W/V%</th><th class="right">Alloc%</th><th></th>' +
+    '<th class="right">Waarde</th><th class="right">Kosten</th>' +
+    '<th class="right">W/V &#8364;</th><th class="right">W/V%</th>' +
+    '<th class="right">Break-even</th><th class="right">Alloc%</th><th></th>' +
     '</tr></thead><tbody>' +
     filtered.map(function(p) {
       var r = calcPos(p), alloc = tv > 0 ? (r.cv/tv*100) : 0;
@@ -1076,8 +1098,17 @@ function renderPortfolio() {
         '<td class="right mono">'+fmtC(p.avgPrice)+'</td>' +
         '<td class="right mono">'+fmtC(p.currentPrice)+'</td>' +
         '<td class="right mono">'+fmtC(r.cv)+'</td>' +
+        '<td class="right mono">'+(r.costs>0?'<span style="color:var(--text3);">'+fmtC(r.costs)+'</span>':'<span style="color:var(--text3);">&#8212;</span>')+'</td>' +
         '<td class="right"><span class="'+cc(r.pl)+'">'+(r.pl>=0?"+":"")+fmtC(r.pl)+'</span></td>' +
         '<td class="right"><span class="'+(r.pp>=0?"pos-bg":"neg-bg")+'">'+fmtPct(r.pp)+'</span></td>' +
+        '<td class="right">' +
+          (r.costs > 0 ?
+            '<div style="display:flex;align-items:center;justify-content:flex-end;gap:5px;">' +
+            '<span style="font-size:10px;font-family:var(--mono);color:var(--text3);">'+fmtC(r.breakEven)+'</span>' +
+            '<span style="font-size:11px;font-weight:600;padding:1px 6px;border-radius:10px;background:'+(r.breakEvenReached?'var(--green-bg)':'var(--red-bg)')+';color:'+(r.breakEvenReached?'var(--green)':'var(--red)') + ';">'+(r.breakEvenReached?'&#10003;':'&#x2715;')+'</span>' +
+            '</div>'
+            : '<span style="color:var(--text3);font-size:11px;">&#8212;</span>') +
+        '</td>' +
         '<td class="right" style="width:90px;">' +
         '<div style="font-size:11px;font-family:var(--mono);margin-bottom:3px;">'+alloc.toFixed(1)+'%</div>' +
         '<div class="progress-bar"><div class="progress-fill" style="width:'+alloc+'%;"></div></div></td>' +
@@ -1788,6 +1819,8 @@ function positionForm(item) {
     '<div class="form-row">'+
     '<div class="form-group"><label class="form-label">Gem. aankoopprijs *</label><input class="form-input" id="f-avg" type="number" step="any" value="'+(item.avgPrice||"")+'" placeholder="0.00"></div>'+
     '<div class="form-group"><label class="form-label">Huidige prijs</label><input class="form-input" id="f-cur" type="number" step="any" value="'+(item.currentPrice||"")+'" placeholder="0.00"></div></div>'+
+    '<div class="form-group"><label class="form-label">Transactiekosten <span style="font-weight:400;color:var(--text3);">(makelaarsloon + TOB + wisselkosten)</span></label>'+
+    '<input class="form-input" id="f-costs" type="number" step="0.01" min="0" value="'+(item.costs||'')+'" placeholder="bv. 10.70 (leeg = geen kosten)"></div>'+
     '<div class="form-group"><label class="form-label">Tags (komma-gescheiden)</label><input class="form-input" id="f-tags" value="'+((item.tags||[]).join(", "))+'" placeholder="bv. core, langetermijn"></div>'+
     '<div class="form-group"><label class="form-label">Notitie</label><textarea class="form-input" id="f-note" rows="2" placeholder="Strategie, redenen...">'+(item.note||"")+'</textarea></div>'+
     '<div class="form-group" style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="f-fav"'+(item.fav?" checked":"")+' style="accent-color:var(--accent);width:16px;height:16px;">'+
@@ -1833,6 +1866,7 @@ async function savePosition(id) {
   var item={id:id||uid(),ticker:ticker,name:(document.getElementById("f-name")||{}).value||ticker,
     type:(document.getElementById("f-type")||{}).value||"etf",qty:qty,avgPrice:avg,
     currentPrice:parseFloat((document.getElementById("f-cur")||{}).value)||avg,
+    costs:parseFloat((document.getElementById("f-costs")||{}).value)||0,
     tags:((document.getElementById("f-tags")||{}).value||"").split(",").map(function(t){return t.trim();}).filter(Boolean),
     note:(document.getElementById("f-note")||{}).value||"",
     yahooSymbol:(document.getElementById("f-yahoo")||{}).value||"",
@@ -1922,13 +1956,19 @@ function openDetail(id, type) {
   if(type==="pos"){
     var r=calcPos(item);
     body+='<div class="grid-2" style="margin-bottom:16px;">'+
-      '<div class="metric-card"><div class="metric-label">Huidige waarde</div><div class="metric-value">'+fmtC(r.cv)+'</div></div>'+
-      '<div class="metric-card"><div class="metric-label">Winst/Verlies</div><div class="metric-value" style="color:'+(r.pl>=0?"var(--green)":"var(--red)")+';">'+(r.pl>=0?"+":"")+fmtC(r.pl)+'</div><div class="metric-delta '+cc(r.pp)+'">'+fmtPct(r.pp)+'</div></div></div>'+
+      '<div class="metric-card"><div class="metric-label">Huidige waarde</div><div class="metric-value">'+fmtC(r.cv)+'</div><div class="metric-delta neutral">kostbasis: '+fmtC(r.cb)+'</div></div>'+
+      '<div class="metric-card"><div class="metric-label">Netto W/V (na kosten)</div><div class="metric-value" style="color:'+(r.pl>=0?'var(--green)':'var(--red)')+';">'+(r.pl>=0?'+':'')+fmtC(r.pl)+'</div><div class="metric-delta '+cc(r.pp)+'">'+fmtPct(r.pp)+'</div></div></div>'+
+      (r.costs > 0 ?
+        '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:14px;background:'+(r.breakEvenReached?'var(--green-bg)':'var(--red-bg)')+';border:1px solid '+(r.breakEvenReached?'rgba(34,211,160,0.25)':'rgba(242,92,122,0.25)')+';"><span style="font-size:20px;">'+(r.breakEvenReached?'&#10003;':'&#x2715;')+'</span>'+
+        '<div><div style="font-size:13px;font-weight:500;color:'+(r.breakEvenReached?'var(--green)':'var(--red)')+';">'+(r.breakEvenReached?'Kosten teruggewonnen':'Kosten nog niet teruggewonnen')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);">Break-even koers: '+fmtC(r.breakEven)+' &bull; Transactiekosten: '+fmtC(r.costs)+'</div></div></div>'
+      : '')+
       '<div class="card mb-16" style="background:var(--bg3);"><table style="width:100%;font-size:13px;">'+
       '<tr><td style="color:var(--text3);padding:5px 0;">Aantal</td><td style="text-align:right;font-family:var(--mono);">'+item.qty+'</td></tr>'+
       '<tr><td style="color:var(--text3);padding:5px 0;">Gem. aankoopprijs</td><td style="text-align:right;font-family:var(--mono);">'+fmtC(item.avgPrice)+'</td></tr>'+
       '<tr><td style="color:var(--text3);padding:5px 0;">Huidige prijs</td><td style="text-align:right;font-family:var(--mono);">'+fmtC(item.currentPrice)+'</td></tr>'+
       '<tr><td style="color:var(--text3);padding:5px 0;">Kostbasis</td><td style="text-align:right;font-family:var(--mono);">'+fmtC(r.cb)+'</td></tr>'+
+      (r.costs > 0 ? '<tr><td style="color:var(--text3);padding:5px 0;">Transactiekosten</td><td style="text-align:right;font-family:var(--mono);color:var(--red);">-'+fmtC(r.costs)+'</td></tr>' : '')+
       '</table></div>';
   }
   body+='<div style="margin-bottom:12px;"><div class="form-label" style="margin-bottom:8px;">Links</div><div class="links-row">'+renderLinks(item.ticker,item.type)+'</div></div>'+
@@ -2025,7 +2065,23 @@ async function initApp() {
   renderDashboard();
 
   document.getElementById("alert-badge").textContent=getData().alerts.filter(function(a){return a.active;}).length;
-  document.getElementById("sync-status").textContent="gesynchroniseerd";
+  // Show last sync time from prices data
+  var priceData = getData().prices || {};
+  var lastUpdated = null;
+  Object.values(priceData).forEach(function(p){ if(p && p.updated && (!lastUpdated || p.updated > lastUpdated)) lastUpdated = p.updated; });
+  var syncEl = document.getElementById("sync-status");
+  if(syncEl) {
+    if(lastUpdated) {
+      var d = new Date(lastUpdated);
+      var hh = String(d.getHours()).padStart(2,"0");
+      var mm = String(d.getMinutes()).padStart(2,"0");
+      var dd2 = String(d.getDate()).padStart(2,"0");
+      var mo2 = String(d.getMonth()+1).padStart(2,"0");
+      syncEl.textContent = "Sync: "+dd2+"/"+mo2+" "+hh+":"+mm;
+    } else {
+      syncEl.textContent = "Nog niet gesynchroniseerd";
+    }
+  }
 
   // Hide loading screen
   var lo=document.getElementById("loading-overlay");
@@ -2236,6 +2292,16 @@ async function syncAllPrices() {
   await takeSnapshot();
   hideSyncProgress();
   if(btn) { btn.disabled = false; btn.innerHTML = "&#9654; Sync koersen"; }
+  // Show last sync timestamp
+  var syncEl = document.getElementById("sync-status");
+  if(syncEl) {
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2,"0");
+    var mm = String(now.getMinutes()).padStart(2,"0");
+    var dd = String(now.getDate()).padStart(2,"0");
+    var mo = String(now.getMonth()+1).padStart(2,"0");
+    syncEl.textContent = "Sync: "+dd+"/"+mo+" "+hh+":"+mm;
+  }
 
   var msg = success + " koersen bijgewerkt";
   if(failed > 0) msg += " &bull; " + failed + " mislukt (" + failedTickers.join(", ") + ")";
