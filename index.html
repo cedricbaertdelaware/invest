@@ -388,7 +388,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// Use persistent cache (new API, replaces enableIndexedDbPersistence)
+// Use persistent cache (new Firebase API — offline support)
 let db;
 try {
   db = initializeFirestore(app, {
@@ -568,7 +568,10 @@ function getData() {
 // ---- CASH CALCULATIONS ----
 function totalDeposited() {
   var tx = getData().transactions;
-  return tx.reduce(function(s,t){ return s + (t.type==="deposit" ? t.amount : -t.amount); }, 0);
+  var today = new Date().toISOString().split("T")[0];
+  // Only count transactions that have already happened (date <= today)
+  return tx.filter(function(t){ return t.date <= today; })
+           .reduce(function(s,t){ return s + (t.type==="deposit" ? t.amount : -t.amount); }, 0);
 }
 function totalInvested() {
   return getData().portfolio.reduce(function(s,p){ return s + p.qty*p.avgPrice; }, 0);
@@ -757,18 +760,43 @@ function renderDashboard() {
 function renderTransactionSummary() {
   var el = document.getElementById("dashboard-transactions");
   if(!el) return;
-  var tx = getData().transactions.slice().sort(function(a,b){ return b.date.localeCompare(a.date); }).slice(0,6);
-  if(!tx.length){ el.innerHTML = '<div class="empty-state" style="padding:16px;"><p>Nog geen stortingen</p></div>'; return; }
-  el.innerHTML = tx.map(function(t){
-    var isDeposit = t.type==="deposit";
-    return '<div class="flex-center gap-8" style="padding:8px 0;border-bottom:1px solid var(--border);">'+
-      '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+( isDeposit?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">'+( isDeposit?"&#8595;":"&#8593;")+'</div>'+
-      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+( isDeposit?"Storting":"Afhaling")+'</div>'+
-      '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+'</div></div>'+
-      '<div style="font-family:var(--mono);font-size:13px;color:'+( isDeposit?"var(--green)":"var(--red)")+';">'+( isDeposit?"+":"-")+fmtC(t.amount,0)+'</div>'+
-      '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>'+
+  var allTx = getData().transactions.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
+  var today = new Date().toISOString().split("T")[0];
+  var past = allTx.filter(function(t){ return t.date <= today; }).slice(0,8);
+  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; }).slice(0,3);
+  if(!allTx.length){
+    el.innerHTML = '<div class="empty-state" style="padding:16px;"><p>Nog geen stortingen &mdash; voeg een storting toe</p></div>';
+    return;
+  }
+  var html = "";
+  if(upcoming.length) {
+    html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;">Gepland</div>';
+    html += upcoming.map(function(t){
+      var isd = t.type==="deposit";
+      return '<div class="flex-center gap-8" style="padding:7px 0;border-bottom:1px solid var(--border);opacity:0.65;">' +
+        '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+(isd?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">&#9654;</div>' +
+        '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+(isd?"Storting":"Afhaling")+' <span style="font-size:10px;color:var(--accent2);background:rgba(108,99,255,.12);padding:1px 6px;border-radius:10px;">maandelijks</span></div>' +
+        '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+' </div></div>' +
+        '<div style="font-family:var(--mono);font-size:13px;color:'+(isd?"var(--green)":"var(--red)") +';">'+(isd?"+":"-")+fmtC(t.amount,0)+'</div>' +
+        '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>' +
+        '</div>';
+    }).join("");
+    if(past.length) html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;margin-top:4px;">Uitgevoerd</div>';
+  }
+  html += past.map(function(t){
+    var isd = t.type==="deposit";
+    return '<div class="flex-center gap-8" style="padding:7px 0;border-bottom:1px solid var(--border);">' +
+      '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+(isd?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">'+(isd?"&#8595;":"&#8593;")+'</div>' +
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+(isd?"Storting":"Afhaling")+(t.recurring?' <span style="font-size:10px;color:var(--accent2);background:rgba(108,99,255,.12);padding:1px 6px;border-radius:10px;">&#8635; maandelijks</span>':"")+' </div>' +
+      '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+' </div></div>' +
+      '<div style="font-family:var(--mono);font-size:13px;color:'+(isd?"var(--green)":"var(--red)") +';">'+(isd?"+":"-")+fmtC(t.amount,0)+'</div>' +
+      '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>' +
       '</div>';
   }).join("");
+  if(allTx.length > 8) {
+    html += '<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0;">'+ allTx.length +' transacties totaal &mdash; exporteer CSV voor volledig overzicht</div>';
+  }
+  el.innerHTML = html;
 }
 
 function renderBriefing() {
@@ -952,19 +980,40 @@ function transactionForm() {
   var today = new Date().toISOString().split("T")[0];
   return '<div class="form-group"><label class="form-label">Type</label>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-    '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" id="lbl-deposit" onclick="selectTxType(\'deposit\')">'+
+    '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" onclick="selectTxType(\'deposit\')">'+
     '<input type="radio" name="tx-type" value="deposit" id="r-deposit" checked style="accent-color:var(--green);"> <span style="font-size:13px;">&#8595; Storting</span></label>'+
-    '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" id="lbl-withdraw" onclick="selectTxType(\'withdraw\')">'+
+    '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" onclick="selectTxType(\'withdraw\')">'+
     '<input type="radio" name="tx-type" value="withdraw" id="r-withdraw" style="accent-color:var(--red);"> <span style="font-size:13px;">&#8593; Afhaling</span></label>'+
     '</div></div>'+
     '<div class="form-group"><label class="form-label">Bedrag *</label>'+
     '<input class="form-input" id="f-tx-amount" type="number" step="0.01" placeholder="0.00" min="0"></div>'+
-    '<div class="form-group"><label class="form-label">Datum</label>'+
+    '<div class="form-group"><label class="form-label">Startdatum</label>'+
     '<input class="form-input" id="f-tx-date" type="date" value="'+today+'"></div>'+
     '<div class="form-group"><label class="form-label">Notitie</label>'+
-    '<input class="form-input" id="f-tx-note" placeholder="bv. maandelijkse storting"></div>'+
+    '<input class="form-input" id="f-tx-note" placeholder="bv. maandelijkse DCA"></div>'+
+    '<div class="form-group" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:0;" id="recurring-header">'+
+    '<input type="checkbox" id="f-recurring" style="accent-color:var(--accent);width:16px;height:16px;" onchange="toggleRecurring()">'+
+    '<label for="f-recurring" style="font-size:13px;font-weight:500;cursor:pointer;">Maandelijks terugkerend</label></div>'+
+    '<div id="recurring-opts" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">'+
+    '<div class="form-row">'+
+    '<div><label class="form-label">Dag van de maand</label>'+
+    '<select class="form-input form-select" id="f-rec-day">'+
+    Array.from({length:28},function(_,i){return '<option value="'+(i+1)+'"'+(i+0===0?' selected':'')+'>'+(i+1)+(i===0?' (1ste)':i===1?' (2de)':i===2?' (3de)':' (de)')+'</option>';}).join("")+
+    '</select></div>'+
+    '<div><label class="form-label">Einddatum (optioneel)</label>'+
+    '<input class="form-input" id="f-rec-end" type="date" placeholder="leeg = onbepaald"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px;">&#9432; Er wordt elke maand automatisch een entry aangemaakt tot de einddatum. Je kan ze altijd individueel verwijderen.</div>'+
+    '</div></div>'+
     '<div class="modal-footer"><button class="btn" onclick="closeModalDirect()">Annuleer</button>'+
     '<button class="btn btn-primary" onclick="saveTransaction()">Opslaan</button></div>';
+}
+
+function toggleRecurring() {
+  var cb = document.getElementById("f-recurring");
+  var opts = document.getElementById("recurring-opts");
+  if(opts) opts.style.display = cb && cb.checked ? "block" : "none";
 }
 
 function selectTxType(type) {
@@ -976,20 +1025,50 @@ async function saveTransaction() {
   var amount = parseFloat((document.getElementById("f-tx-amount")||{}).value);
   if(!amount || amount <= 0){ alert("Bedrag is verplicht"); return; }
   var type = (document.getElementById("r-withdraw")||{}).checked ? "withdraw" : "deposit";
+  var startDate = (document.getElementById("f-tx-date")||{}).value || new Date().toISOString().split("T")[0];
+  var note = (document.getElementById("f-tx-note")||{}).value || "";
+  var isRecurring = (document.getElementById("f-recurring")||{}).checked;
   var d = getData();
   var tx = d.transactions.slice();
-  tx.push({
-    id: uid(),
-    type: type,
-    amount: amount,
-    date: (document.getElementById("f-tx-date")||{}).value || new Date().toISOString().split("T")[0],
-    note: (document.getElementById("f-tx-note")||{}).value || ""
-  });
+  var recurringId = isRecurring ? uid() : null;
+
+  if(!isRecurring) {
+    // Single transaction
+    tx.push({ id:uid(), type:type, amount:amount, date:startDate, note:note });
+  } else {
+    // Generate monthly entries from startDate until endDate (or 24 months if no end)
+    var recDay = parseInt((document.getElementById("f-rec-day")||{}).value) || 1;
+    var endVal = (document.getElementById("f-rec-end")||{}).value;
+    var endDate = endVal ? new Date(endVal) : null;
+    var today = new Date();
+    var maxEnd = endDate || new Date(today.getFullYear()+2, today.getMonth(), today.getDate());
+    var start = new Date(startDate);
+    // Start from the recDay of start month
+    var cur = new Date(start.getFullYear(), start.getMonth(), recDay);
+    if(cur < start) { cur.setMonth(cur.getMonth()+1); }
+    var count = 0;
+    while(cur <= maxEnd && count < 60) {
+      var dateStr = cur.getFullYear()+"-"+String(cur.getMonth()+1).padStart(2,"0")+"-"+String(recDay).padStart(2,"0");
+      tx.push({
+        id: uid(),
+        type: type,
+        amount: amount,
+        date: dateStr,
+        note: note,
+        recurringId: recurringId,
+        recurring: true
+      });
+      cur.setMonth(cur.getMonth()+1);
+      count++;
+    }
+    showToast(count+" maandelijkse entries aangemaakt","success");
+  }
+
   tx.sort(function(a,b){ return b.date.localeCompare(a.date); });
   await saveKey("transactions", tx);
   closeModalDirect();
   renderDashboard();
-  showToast((type==="deposit"?"Storting":"Afhaling")+" opgeslagen","success");
+  if(!isRecurring) showToast((type==="deposit"?"Storting":"Afhaling")+" opgeslagen","success");
 }
 
 async function deleteTransaction(id) {
@@ -1193,7 +1272,7 @@ async function takeSnapshot() {
 // ---- EXPORT / IMPORT ----
 function exportJSON() {
   var d=getData();
-  var blob=new Blob([JSON.stringify({portfolio:d.portfolio,watchlist:d.watchlist,alerts:d.alerts,settings:d.settings,snapshots:d.snapshots,exported:new Date().toISOString()},null,2)],{type:"application/json"});
+  var blob=new Blob([JSON.stringify({portfolio:d.portfolio,watchlist:d.watchlist,alerts:d.alerts,settings:d.settings,snapshots:d.snapshots,transactions:d.transactions,exported:new Date().toISOString()},null,2)],{type:"application/json"});
   var url=URL.createObjectURL(blob);
   var a=document.createElement("a"); a.href=url; a.download="folio-backup-"+new Date().toISOString().split("T")[0]+".json"; a.click();
   URL.revokeObjectURL(url);
@@ -1218,6 +1297,7 @@ async function importJSON(event) {
       if(d.alerts) await saveKey("alerts",d.alerts);
       if(d.settings) await saveKey("settings",d.settings);
       if(d.snapshots) await saveKey("snapshots",d.snapshots);
+      if(d.transactions) await saveKey("transactions",d.transactions);
       showToast("Import gelukt!","success");
       setTimeout(function(){location.reload();},1000);
     }catch(err){showToast("Fout bij importeren: "+err.message,"error");}
