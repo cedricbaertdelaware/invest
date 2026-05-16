@@ -1767,66 +1767,116 @@ async function initApp() {
 }
 
 
+
 // ============================================================
 // PRICE SYNC ENGINE
-// Uses Yahoo Finance via allorigins CORS proxy
-// Falls back gracefully if unavailable
+// Uses Yahoo Finance via multiple CORS proxies with fallback
 // ============================================================
 
-// Map tickers to Yahoo Finance symbols
 function toYahooSymbol(ticker, type) {
-  var cryptoMap = { "BTC":"BTC-EUR","ETH":"ETH-EUR","SOL":"SOL-EUR","BNB":"BNB-EUR","ADA":"ADA-EUR" };
-  if(type === "crypto") return cryptoMap[ticker.toUpperCase()] || (ticker+"-EUR");
-  // European ETFs on Euronext Amsterdam
-  var euronextETFs = ["IWDA","VWCE","EMIM","EQQQ","XNAS","CSPX","MEUD","DFEN","EUDF","CS51","IMAE","IEMA","VUSA","MEUD"];
-  if(type === "etf" && euronextETFs.indexOf(ticker.toUpperCase()) >= 0) return ticker+".AS";
-  return ticker;
+  var cryptoMap = {"BTC":"BTC-EUR","ETH":"ETH-EUR","SOL":"SOL-EUR","BNB":"BNB-EUR","ADA":"ADA-EUR","XRP":"XRP-EUR","DOT":"DOT-EUR","LINK":"LINK-EUR"};
+  if(type === "crypto") return cryptoMap[ticker.toUpperCase()] || (ticker.toUpperCase()+"-EUR");
+  // ETFs listed on Euronext Amsterdam (.AS) or London (.L)
+  var asETFs = ["IWDA","VWCE","EMIM","EQQQ","XNAS","CSPX","MEUD","DFEN","EUDF","CS51","IMAE","IEMA","VUSA","SWRD","IUSQ","HMWO","AGGH"];
+  if(type === "etf") {
+    if(asETFs.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".AS";
+    return ticker.toUpperCase()+".AS"; // default try Amsterdam
+  }
+  // Belgian stocks
+  var belStocks = ["AB","UCB","KBC","ING","SOLB","ABI","GBLB","ACKB","AGS","COLR"];
+  if(belStocks.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".BR";
+  // Dutch stocks
+  var nlStocks = ["ASML","ADYEN","HEIA","PHIA","WKL","REN","NN","AKZA"];
+  if(nlStocks.indexOf(ticker.toUpperCase()) >= 0) return ticker.toUpperCase()+".AS";
+  // Default: try as-is (US stocks)
+  return ticker.toUpperCase();
+}
+
+async function fetchWithProxy(url) {
+  // Try multiple CORS proxies in order
+  var proxies = [
+    "https://corsproxy.io/?" + encodeURIComponent(url),
+    "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
+    "https://thingproxy.freeboard.io/fetch/" + url,
+  ];
+  for(var i = 0; i < proxies.length; i++) {
+    try {
+      var resp = await fetch(proxies[i], {
+        signal: AbortSignal.timeout(6000),
+        headers: { "Accept": "application/json" }
+      });
+      if(!resp.ok) continue;
+      var text = await resp.text();
+      if(!text || text.length < 10) continue;
+      var json = JSON.parse(text);
+      return json;
+    } catch(e) {
+      console.warn("Proxy " + i + " failed:", e.message);
+    }
+  }
+  return null;
 }
 
 async function fetchYahooPrice(ticker, type) {
   var symbol = toYahooSymbol(ticker, type);
-  var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?interval=1d&range=1d";
-  var proxy = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
+  var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?interval=1d&range=2d&includePrePost=false";
   try {
-    var resp = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
-    if(!resp.ok) throw new Error("HTTP " + resp.status);
-    var json = await resp.json();
-    var data = JSON.parse(json.contents);
+    var data = await fetchWithProxy(url);
+    if(!data) {
+      // Try .L suffix as fallback for ETFs
+      if(type === "etf" && !symbol.endsWith(".L")) {
+        var symL = ticker.toUpperCase() + ".L";
+        var url2 = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symL) + "?interval=1d&range=2d";
+        data = await fetchWithProxy(url2);
+      }
+    }
+    if(!data) throw new Error("No result from any proxy");
+
     var result = data.chart && data.chart.result && data.chart.result[0];
-    if(!result) throw new Error("No result");
+    if(!result) throw new Error("No chart result");
+
     var meta = result.meta;
     var price = meta.regularMarketPrice || meta.previousClose;
-    var prevClose = meta.chartPreviousClose || meta.previousClose || price;
+    if(!price || price === 0) throw new Error("Zero price");
+
+    var prevClose = meta.previousClose || meta.chartPreviousClose || price;
     var change = price - prevClose;
     var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-    var currency = meta.currency || "EUR";
-    return { price: price, change: change, changePct: changePct, currency: currency, symbol: symbol, updated: new Date().toISOString(), ok: true };
+
+    return {
+      price: Math.round(price * 100) / 100,
+      change: Math.round(change * 100) / 100,
+      changePct: Math.round(changePct * 100) / 100,
+      currency: meta.currency || "EUR",
+      symbol: symbol,
+      updated: new Date().toISOString(),
+      ok: true
+    };
   } catch(e) {
-    console.warn("Price fetch failed for " + ticker + ":", e.message);
-    return { ok: false, symbol: symbol };
+    console.warn("Price fetch failed for " + ticker + " (" + symbol + "):", e.message);
+    return { ok: false, symbol: symbol, error: e.message };
   }
 }
 
 async function syncAllPrices() {
   var d = getData();
+  var seen = {};
   var items = [];
-
-  // Collect all unique tickers from portfolio + watchlist
-  d.portfolio.forEach(function(p){ items.push({ ticker: p.ticker, type: p.type }); });
+  d.portfolio.forEach(function(p){
+    if(!seen[p.ticker]) { seen[p.ticker]=true; items.push({ticker:p.ticker,type:p.type}); }
+  });
   d.watchlist.forEach(function(w){
-    if(!items.find(function(i){ return i.ticker === w.ticker; }))
-      items.push({ ticker: w.ticker, type: w.type });
+    if(!seen[w.ticker]) { seen[w.ticker]=true; items.push({ticker:w.ticker,type:w.type}); }
   });
 
-  if(!items.length) { showToast("Geen instrumenten om te synchroniseren", ""); return; }
+  if(!items.length) { showToast("Geen instrumenten om te synchroniseren"); return; }
 
-  // Update UI
   var btn = document.getElementById("sync-prices-btn");
-  if(btn) { btn.disabled = true; btn.textContent = "Synchroniseren..."; }
-  showSyncProgress(0, items.length);
+  if(btn) { btn.disabled = true; btn.textContent = "Bezig..."; }
+  showSyncProgress(0, items.length, "");
 
   var prices = Object.assign({}, d.prices || {});
-  var success = 0, failed = 0;
+  var success = 0, failed = 0, failedTickers = [];
 
   for(var i = 0; i < items.length; i++) {
     var item = items[i];
@@ -1837,41 +1887,38 @@ async function syncAllPrices() {
       success++;
     } else {
       failed++;
+      failedTickers.push(item.ticker);
     }
-    // Small delay to avoid rate limiting
-    if(i < items.length - 1) await new Promise(function(r){ setTimeout(r, 400); });
+    if(i < items.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
   }
 
-  // Save prices
   await saveKey("prices", prices);
 
-  // Update portfolio current prices from fetched data
-  var portfolio = d.portfolio.slice();
-  var updated = 0;
-  portfolio.forEach(function(p) {
+  // Push prices into portfolio
+  var portfolio = getData().portfolio.slice();
+  var updatedP = 0;
+  portfolio.forEach(function(p){
     var pr = prices[p.ticker.toUpperCase()];
-    if(pr && pr.ok && pr.price) { p.currentPrice = pr.price; updated++; }
+    if(pr && pr.ok) { p.currentPrice = pr.price; updatedP++; }
   });
-  if(updated > 0) await saveKey("portfolio", portfolio);
+  if(updatedP > 0) await saveKey("portfolio", portfolio);
 
-  // Update watchlist current prices too
-  var watchlist = d.watchlist.slice();
-  watchlist.forEach(function(w) {
+  // Push prices into watchlist
+  var watchlist = getData().watchlist.slice();
+  watchlist.forEach(function(w){
     var pr = prices[w.ticker.toUpperCase()];
-    if(pr && pr.ok && pr.price) { w.currentPrice = pr.price; }
+    if(pr && pr.ok) { w.currentPrice = pr.price; }
   });
   await saveKey("watchlist", watchlist);
 
   await takeSnapshot();
-
   hideSyncProgress();
-  if(btn) { btn.disabled = false; btn.textContent = "&#9654; Sync koersen"; }
+  if(btn) { btn.disabled = false; btn.innerHTML = "&#9654; Sync koersen"; }
 
   var msg = success + " koersen bijgewerkt";
-  if(failed > 0) msg += ", " + failed + " mislukt";
+  if(failed > 0) msg += " &bull; " + failed + " mislukt (" + failedTickers.join(", ") + ")";
   showToast(msg, success > 0 ? "success" : "error");
 
-  // Re-render current view
   var activeView = document.querySelector(".view.active");
   if(activeView) {
     var vid = activeView.id.replace("view-","");
@@ -1884,12 +1931,12 @@ function showSyncProgress(current, total, ticker) {
   var el = document.getElementById("sync-progress");
   if(!el) return;
   el.style.display = "flex";
-  var pct = total > 0 ? (current / total) * 100 : 0;
+  var pct = total > 0 ? Math.round((current / total) * 100) : 0;
   el.innerHTML =
     '<div style="flex:1;">' +
     '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px;">' +
-    '<span>' + (ticker ? 'Ophalen: ' + ticker : 'Klaar') + '</span>' +
-    '<span>' + current + ' / ' + total + '</span></div>' +
+    '<span>' + (ticker ? 'Ophalen: <strong style="color:var(--text);">' + ticker + '</strong>' : 'Gereed') + '</span>' +
+    '<span style="font-family:var(--mono);">' + current + ' / ' + total + ' &bull; ' + pct + '%</span></div>' +
     '<div style="height:3px;background:var(--bg4);border-radius:2px;">' +
     '<div style="height:100%;width:' + pct + '%;background:var(--accent);border-radius:2px;transition:width .3s;"></div>' +
     '</div></div>';
@@ -1897,293 +1944,22 @@ function showSyncProgress(current, total, ticker) {
 
 function hideSyncProgress() {
   var el = document.getElementById("sync-progress");
-  if(el) el.style.display = "none";
+  if(el) { setTimeout(function(){ el.style.display = "none"; }, 1500); }
 }
 
 function getPrice(ticker) {
-  var prices = getData().prices || {};
-  return prices[ticker.toUpperCase()] || null;
+  return (getData().prices || {})[ticker.toUpperCase()] || null;
 }
 
 function formatPriceAge(isoString) {
   if(!isoString) return "";
   var diff = (Date.now() - new Date(isoString).getTime()) / 60000;
   if(diff < 2) return "zojuist";
-  if(diff < 60) return Math.round(diff) + " min geleden";
-  if(diff < 1440) return Math.round(diff/60) + " uur geleden";
-  return Math.round(diff/1440) + " dagen geleden";
+  if(diff < 60) return Math.round(diff) + "min geleden";
+  if(diff < 1440) return Math.round(diff/60) + "u geleden";
+  return Math.round(diff/1440) + "d geleden";
 }
 
-
-
-function renderGlossary() {
-  var el = document.getElementById("glossary-content");
-  if(!el) return;
-
-  var sections = [
-    {
-      title: "Kosten & Belastingen",
-      icon: "&#8364;",
-      color: "var(--red)",
-      items: [
-        {
-          term: "TER",
-          full: "Total Expense Ratio",
-          desc: "De jaarlijkse beheerskost van een ETF, uitgedrukt als percentage van je belegde bedrag. Deze kost wordt automatisch verrekend in de koers — je ziet ze niet apart op je rekening.",
-          example: "IWDA heeft een TER van 0.20%. Op €10.000 belegd is dat €20/jaar aan kosten.",
-          tip: "Hoe lager de TER, hoe meer rendement jij overhoudt. Voor brede index-ETFs streef je naar onder de 0.25%.",
-          good: "< 0.25%",
-          bad: "> 0.50%"
-        },
-        {
-          term: "TOB",
-          full: "Taks op Beursverrichtingen",
-          desc: "Belgische beurstaks die je betaalt bij elke aankoop én verkoop van een effect. Het percentage verschilt per type instrument en is wettelijk vastgelegd.",
-          example: "Koop je voor €1.000 IWDA (TOB 0.12%), betaal je €1.20 taks. Koop je VWCE (TOB 1.32%), betaal je €13.20 — 11× meer.",
-          tip: "De TOB is éénmalig per transactie, maar telt op bij elke aan- en verkoop. ETFs met lage TOB zijn veel voordeliger voor actieve beleggers.",
-          rates: [
-            { label: "Meeste Ierse ETFs (bv. IWDA)", value: "0.12%" },
-            { label: "Belgisch geregistreerde ETFs (bv. VWCE)", value: "1.32%" },
-            { label: "Aandelen (Euronext)", value: "0.35%" },
-            { label: "Obligaties", value: "0.12%" },
-          ]
-        },
-        {
-          term: "Makelaarsloon",
-          full: "Transactiekosten broker",
-          desc: "De commissie die je broker (bv. Bolero) aanrekent per transactie. Afhankelijk van de markt en het bedrag.",
-          example: "Bolero rekent €7.50 aan voor Euronext-transacties tot €2.500. Op €1.000 is dat 0.75% extra kost.",
-          tip: "Bij kleine bedragen (< €1.000) eet het makelaarsloon een groot deel van je rendement op. Spaar op en beleg periodiek in grotere bedragen."
-        },
-        {
-          term: "Roerende voorheffing",
-          full: "Dividendbelasting",
-          desc: "België heft 30% belasting op dividenden en interesten. Bij distribuerend ETFs of dividendaandelen wordt dit automatisch ingehouden.",
-          example: "Je ontvangt €100 brutodividend → €30 gaat naar de fiscus → €70 netto op je rekening.",
-          tip: "Kies voor accumulerende ETFs om de 30% dividendbelasting te vermijden. Het fonds herbelegt dan automatisch alle dividenden."
-        }
-      ]
-    },
-    {
-      title: "ETF Types",
-      icon: "&#9671;",
-      color: "var(--blue)",
-      items: [
-        {
-          term: "Accumulerend",
-          full: "Accumulating (ACC)",
-          desc: "Een accumulerende ETF herbelegt alle ontvangen dividenden automatisch terug in het fonds. Je ziet geen uitkering op je rekening — de waarde van je aandelen stijgt.",
-          example: "IWDA (ACC): dividenden worden automatisch herbelegd. Na 10 jaar profiteer je maximaal van het rente-op-rente effect.",
-          tip: "Voor Belgische beleggers bijna altijd de betere keuze: geen 30% dividendbelasting, automatisch herbelegd, minder transacties.",
-          badge: "ACC",
-          badgeColor: "var(--green)"
-        },
-        {
-          term: "Distribuerend",
-          full: "Distributing (DIST)",
-          desc: "Een distribuerende ETF keert de ontvangen dividenden periodiek uit aan aandeelhouders (maandelijks, kwartaal of jaarlijks). Je ontvangt cash op je rekening.",
-          example: "EQQQ (DIST): keert elk kwartaal dividenden uit. Maar je betaalt 30% roerende voorheffing op elke uitkering.",
-          tip: "Alleen interessant als je cashflow nodig hebt (bv. voor levensonderhoud). Anders kost het je elk jaar 30% op de dividenden.",
-          badge: "DIST",
-          badgeColor: "var(--amber)"
-        },
-        {
-          term: "UCITS ETF",
-          full: "Undertakings for Collective Investment in Transferable Securities",
-          desc: "Europese standaard voor beleggingsfondsen. Garandeert beleggersbescherming, transparantie en diversificatieregels. Alle ETFs op Euronext zijn UCITS-compliant.",
-          tip: "Koop altijd UCITS ETFs als Europese belegger. Vermijd Amerikaanse ETFs (geen UCITS) — die zijn niet fiscaal gunstig in België."
-        },
-        {
-          term: "Fysieke replicatie",
-          full: "Physical replication",
-          desc: "Het fonds koopt effectief de aandelen uit de index aan. Meest transparante methode. Tegenstelling: synthetische replicatie via swaps (meer tegenpartijrisico).",
-          tip: "iShares en Vanguard ETFs gebruiken bijna altijd fysieke replicatie. Kijk in het KIID-document voor bevestiging."
-        },
-        {
-          term: "Domicilie Ierland",
-          full: "Fonds gevestigd in Ierland",
-          desc: "De meeste grote ETFs zijn gevestigd in Ierland (Dublin). Dit is fiscaal voordelig: Ierse fondsen betalen slechts 15% dividendbelasting op Amerikaanse aandelen (vs. 30% voor Belgische fondsen).",
-          example: "IWDA domicilie = Ierland → TOB 0.12%. VWCE is ook Iers maar Belgisch geregistreerd → TOB 1.32%.",
-          tip: "Let op het verschil: domicilie Ierland ≠ automatisch lage TOB. Het gaat om de Belgische registratie die de TOB bepaalt."
-        }
-      ]
-    },
-    {
-      title: "Index & Markt begrippen",
-      icon: "&#9650;",
-      color: "var(--accent2)",
-      items: [
-        {
-          term: "MSCI World",
-          full: "Morgan Stanley Capital International World Index",
-          desc: "Index van ~1.500 large- en mid-cap aandelen uit 23 ontwikkelde landen. ~65% VS, 6% Japan, 4% UK... Dekt ~85% van de marktkapitalisatie van ontwikkelde landen.",
-          example: "IWDA en XDWD tracken de MSCI World. Historisch ~10% per jaar gemiddeld rendement.",
-          tip: "Goed als kernpositie. Dekt GEEN opkomende markten (China, India, Brazilië)."
-        },
-        {
-          term: "FTSE All-World",
-          full: "Financial Times Stock Exchange All-World Index",
-          desc: "Index van ~4.000 aandelen wereldwijd, inclusief opkomende markten. Breder dan MSCI World. Concurrent van MSCI ACWI.",
-          example: "VWCE trackt de FTSE All-World. Bevat ook Emerging Markets (~10% van de index).",
-          tip: "Iets breder dan MSCI World door toevoeging EM, maar heeft hogere TOB in België via VWCE."
-        },
-        {
-          term: "S&P 500",
-          full: "Standard & Poor's 500",
-          desc: "Index van de 500 grootste Amerikaanse bedrijven. Marktkapitalisatiegewogen. Meest gevolgde index ter wereld.",
-          example: "CSPX en VUSA tracken de S&P 500. Historisch ~10.5% per jaar.",
-          tip: "Hoge concentratie in VS (100%). Goed voor VS-blootstelling maar minder gediversifieerd dan MSCI World."
-        },
-        {
-          term: "Emerging Markets (EM)",
-          full: "Opkomende markten",
-          desc: "Landen in economische ontwikkeling met hogere groeipotentie maar ook meer risico. Grootste markten: China, India, Taiwan, Brazilië, Zuid-Korea.",
-          example: "EMIM trackt MSCI EM IMI: ~3.000 aandelen in opkomende markten.",
-          tip: "Goed als satelliet (10-20% van portfolio) naast een brede wereldindex voor extra diversificatie."
-        },
-        {
-          term: "Marktkapitalisatie",
-          full: "Market cap",
-          desc: "De totale beurswaarde van een bedrijf: aandelenprijs × aantal aandelen. Bepaalt het gewicht in een index.",
-          example: "Apple heeft ~$3.000 miljard marktkapitalisatie → grootste gewicht in S&P 500 en MSCI World (~5%)."
-        },
-        {
-          term: "Herbalancering",
-          full: "Rebalancing",
-          desc: "Het terugbrengen van je portfolio naar je gewenste allocatie. Als aandelen sterk stijgen, wordt je allocatie te hoog → verkoop wat en koop andere klassen bij.",
-          tip: "Doe dit max. 1-2× per jaar om belastingen en transactiekosten te minimaliseren."
-        }
-      ]
-    },
-    {
-      title: "Portfolio begrippen",
-      icon: "&#9647;",
-      color: "var(--green)",
-      items: [
-        {
-          term: "Allocatie",
-          full: "Asset allocation",
-          desc: "De verdeling van je portfolio over verschillende activaklassen (ETFs, aandelen, crypto, cash). Bepalend voor je risico-rendementsprofiel.",
-          tip: "Een veelgebruikte basis: 70-80% brede index ETF + 10-20% satellieten + max 5-10% speculatief (crypto)."
-        },
-        {
-          term: "Kostbasis",
-          full: "Cost basis",
-          desc: "Het totale bedrag dat je effectief betaald hebt voor je huidige positie: aantal aandelen × gemiddelde aankoopprijs.",
-          example: "Je kocht 10 IWDA aan €80 en 5 aan €90: kostbasis = (10×80)+(5×90) = €1.250. Gemiddelde aankoopprijs = €83.33."
-        },
-        {
-          term: "DCA",
-          full: "Dollar Cost Averaging",
-          desc: "Strategie waarbij je periodiek (bv. maandelijks) een vast bedrag investeert, ongeacht de koers. Je koopt automatisch meer aandelen als de koers laag is en minder als hoog.",
-          tip: "Meest aanbevolen strategie voor particuliere beleggers. Elimineert de nood om de markt te 'timen'."
-        },
-        {
-          term: "W/V (Winst/Verlies)",
-          full: "Ongerealiseerde winst of verlies",
-          desc: "Het verschil tussen de huidige marktwaarde en je kostbasis. 'Ongerealiseerd' betekent dat je nog niet verkocht hebt.",
-          example: "Kostbasis €1.000, huidige waarde €1.150 → ongerealiseerde winst €150 (+15%).",
-          tip: "Belasting op meerwaarden van ETFs/aandelen bestaat momenteel niet in België (behalve speculatietaks bij snelle aan/verkoop)."
-        },
-        {
-          term: "Dividend",
-          full: "Winstuitkering",
-          desc: "Een periodieke uitkering van een deel van de bedrijfswinst aan aandeelhouders. Uitgedrukt als bedrag per aandeel of als dividendrendement (%).",
-          example: "AB InBev betaalt ~€0.80/aandeel dividend. Bij koers €50 is dat 1.6% dividendrendement.",
-          tip: "In België betaal je 30% roerende voorheffing op dividenden. Herbelegd via ACC ETF vermijdt dit."
-        }
-      ]
-    }
-  ];
-
-  var html = '';
-
-  // Search bar
-  html += '<div style="margin-bottom:24px;">' +
-    '<input type="text" class="search-input" id="glossary-search" placeholder="Zoek begrip..." ' +
-    'oninput="filterGlossary()" style="width:280px;">' +
-    '</div>';
-
-  sections.forEach(function(sec) {
-    html += '<div class="glossary-section" style="margin-bottom:32px;">' +
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);">' +
-      '<span style="font-size:20px;color:'+sec.color+';">'+sec.icon+'</span>' +
-      '<h2 style="font-size:16px;font-weight:500;color:var(--text);">'+sec.title+'</h2>' +
-      '</div>';
-
-    sec.items.forEach(function(item) {
-      html += '<div class="glossary-item" style="margin-bottom:12px;border:1px solid var(--card-border);border-radius:var(--radius);overflow:hidden;">' +
-        // Header
-        '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--card-bg);cursor:pointer;" onclick="toggleGlossaryItem(this)">' +
-        '<div style="flex:1;">' +
-        '<div style="display:flex;align-items:center;gap:10px;">' +
-        '<span style="font-size:15px;font-weight:600;color:var(--text);font-family:var(--mono);">'+item.term+'</span>' +
-        (item.badge ? '<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:'+item.badgeColor+';color:#fff;font-weight:500;">'+item.badge+'</span>' : '') +
-        '</div>' +
-        '<div style="font-size:12px;color:var(--text3);margin-top:2px;">'+item.full+'</div>' +
-        '</div>' +
-        (item.good ? '<div style="text-align:right;flex-shrink:0;">' +
-          '<div style="font-size:10px;color:var(--green);font-family:var(--mono);">goed: '+item.good+'</div>' +
-          '<div style="font-size:10px;color:var(--red);font-family:var(--mono);">hoog: '+item.bad+'</div>' +
-          '</div>' : '') +
-        '<span style="color:var(--text3);font-size:12px;margin-left:8px;">&#9660;</span>' +
-        '</div>' +
-        // Body (expanded by default for first few, closed otherwise)
-        '<div class="glossary-body" style="padding:0 18px;max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease;">' +
-        '<div style="padding:14px 0;border-top:1px solid var(--border);">' +
-        '<p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px;">'+item.desc+'</p>' +
-        (item.example ? '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text2);">'+
-          '<span style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px;">Voorbeeld</span>'+
-          item.example+'</div>' : '') +
-        (item.rates ? '<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;">' +
-          '<div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">TOB tarieven</div>' +
-          item.rates.map(function(r){
-            return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);">'+
-              '<span style="color:var(--text2);">'+r.label+'</span>'+
-              '<span style="font-family:var(--mono);font-weight:500;color:'+(parseFloat(r.value)>0.5?"var(--red)":"var(--green)")+';">'+r.value+'</span></div>';
-          }).join('') +
-          '</div>' : '') +
-        (item.tip ? '<div style="display:flex;gap:8px;background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.15);border-radius:var(--radius-sm);padding:10px 14px;">' +
-          '<span style="font-size:14px;flex-shrink:0;">&#9998;</span>' +
-          '<p style="font-size:12px;color:var(--text2);line-height:1.6;">'+item.tip+'</p>' +
-          '</div>' : '') +
-        '</div></div>' +
-        '</div>';
-    });
-    html += '</div>';
-  });
-
-  el.innerHTML = html;
-}
-
-function toggleGlossaryItem(header) {
-  var body = header.nextElementSibling;
-  var arrow = header.querySelector('span:last-child');
-  if(!body) return;
-  var isOpen = body.style.maxHeight && body.style.maxHeight !== '0px';
-  if(isOpen) {
-    body.style.maxHeight = '0';
-    body.style.padding = '0 18px';
-    if(arrow) arrow.textContent = '▼';
-  } else {
-    body.style.maxHeight = '1000px';
-    body.style.padding = '0 18px';
-    if(arrow) arrow.textContent = '▲';
-  }
-}
-
-function filterGlossary() {
-  var q = (document.getElementById("glossary-search")||{}).value||"";
-  q = q.toLowerCase();
-  document.querySelectorAll(".glossary-item").forEach(function(item) {
-    var text = item.textContent.toLowerCase();
-    item.style.display = (!q || text.includes(q)) ? "" : "none";
-  });
-  document.querySelectorAll(".glossary-section").forEach(function(sec) {
-    var visible = sec.querySelectorAll('.glossary-item:not([style*="display: none"])').length;
-    sec.style.display = visible > 0 ? "" : "none";
-  });
-}
 
 // Wait for Firebase module to be ready
 window._initApp = initApp;
