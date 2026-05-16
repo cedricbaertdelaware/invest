@@ -870,7 +870,12 @@ function renderPortfolio() {
       var r=calcPos(p), alloc=tv>0?(r.cv/tv*100):0;
       return '<tr onclick="openDetail(\''+p.id+'\',\'pos\')" style="cursor:pointer;">'+
         '<td><div class="asset-row"><div class="asset-avatar av-'+p.type+'">'+p.ticker.slice(0,3)+'</div>'+
-        '<div><div class="asset-name">'+p.ticker+(p.fav?" &#9733;":"")+'</div><div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>'+
+        '<div><div class="flex-center" style="gap:4px;"><span class="asset-name">'+p.ticker+'</span>'+
+          '<span onclick="event.stopPropagation();toggleFav(\''+p.id+'\',\'pos\')" '+
+          'style="cursor:pointer;font-size:13px;color:'+(p.fav?'var(--red)':'var(--text3)')+';line-height:1;" '+
+          'onmouseover="this.style.color=\'var(--red)\'" '+
+          'onmouseout="this.style.color=\''+(p.fav?'var(--red)':'var(--text3)')+'\'">'+
+          (p.fav?'&#9733;':'&#9734;')+'</span></div>'+'</div><div class="asset-sub truncate" style="max-width:160px;">'+p.name+'</div></div></div></td>'+
         '<td>'+typeBadge(p.type)+'</td>'+
         '<td class="right mono">'+p.qty+'</td>'+
         '<td class="right mono">'+fmtC(p.avgPrice)+'</td>'+
@@ -1301,7 +1306,11 @@ function renderEnrichedCard(w, info) {
     '</div>'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">'+
     '<div style="font-size:22px;font-weight:600;color:var(--text);">'+w.ticker+'</div>'+
-    (w.fav ? '<span style="color:var(--red);font-size:15px;">&#9733;</span>' : "")+
+    '<span onclick="event.stopPropagation();toggleFav(\''+w.id+'\',\'wl\')" '+
+    'style="cursor:pointer;font-size:18px;color:'+(w.fav?'var(--red)':'var(--text3)')+';transition:color .15s;" '+
+    'onmouseover="this.style.color=\'var(--red)\'" '+
+    'onmouseout="this.style.color=\''+(w.fav?'var(--red)':'var(--text3)')+'\'">'+
+    (w.fav?'&#9733;':'&#9734;')+'</span>'+
     typeBadge(w.type)+
     '</div>'+
     '<div style="font-size:12px;color:var(--text3);">'+info.name+'</div>'+
@@ -1337,7 +1346,12 @@ function renderBasicCard(w) {
     '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">'+
     '<div class="flex-center gap-8" style="flex:1;">'+
     '<div class="asset-avatar av-'+w.type+'">'+w.ticker.slice(0,3)+'</div>'+
-    '<div style="flex:1;min-width:0;"><div class="flex-center gap-8"><div class="asset-name">'+w.ticker+'</div>'+(w.fav?'<span style="color:var(--red);">&#9733;</span>':"")+'</div>'+
+    '<div style="flex:1;min-width:0;"><div class="flex-center gap-8"><div class="asset-name">'+w.ticker+'</div>'+
+    '<span onclick="event.stopPropagation();toggleFav(\''+w.id+'\',\'wl\')" '+
+    'style="cursor:pointer;font-size:16px;color:'+(w.fav?'var(--red)':'var(--text3)')+';transition:color .15s;" '+
+    'onmouseover="this.style.color=\'var(--red)\'" '+
+    'onmouseout="this.style.color=\''+(w.fav?'var(--red)':'var(--text3)')+'\'">'+
+    (w.fav?'&#9733;':'&#9734;')+'</span>'+'</div>'+
     '<div class="asset-sub truncate">'+w.name+'</div></div>'+
     typeBadge(w.type)+'</div>'+
     '<div style="display:flex;gap:4px;flex-shrink:0;">'+
@@ -1860,45 +1874,67 @@ async function fetchWithProxy(url) {
 }
 
 async function fetchYahooPrice(ticker, type, customSymbol) {
-  var symbol = customSymbol || toYahooSymbol(ticker, type);
-  var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?interval=1d&range=2d&includePrePost=false";
-  try {
-    var data = await fetchWithProxy(url);
-    if(!data) {
-      // Try .L suffix as fallback for ETFs
-      if(type === "etf" && !symbol.endsWith(".L")) {
-        var symL = ticker.toUpperCase() + ".L";
-        var url2 = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symL) + "?interval=1d&range=2d";
-        data = await fetchWithProxy(url2);
+  var t = ticker.toUpperCase();
+  var primarySymbol = customSymbol || toYahooSymbol(t, type);
+  
+  // For ETFs: try multiple EUR-listed exchanges in order
+  // NEVER fall back to .L (London = GBP prices!)
+  var symbolsToTry = [primarySymbol];
+  if(!customSymbol && type === "etf") {
+    // Add EUR exchange fallbacks (not .L which is GBP)
+    var eurFallbacks = [".AS", ".PA", ".MI", ".DE", ".F"];
+    eurFallbacks.forEach(function(suffix) {
+      var sym = t + suffix;
+      if(sym !== primarySymbol && symbolsToTry.indexOf(sym) < 0) {
+        symbolsToTry.push(sym);
       }
-    }
-    if(!data) throw new Error("No result from any proxy");
-
-    var result = data.chart && data.chart.result && data.chart.result[0];
-    if(!result) throw new Error("No chart result");
-
-    var meta = result.meta;
-    var price = meta.regularMarketPrice || meta.previousClose;
-    if(!price || price === 0) throw new Error("Zero price");
-
-    var prevClose = meta.previousClose || meta.chartPreviousClose || price;
-    var change = price - prevClose;
-    var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-
-    return {
-      price: Math.round(price * 100) / 100,
-      change: Math.round(change * 100) / 100,
-      changePct: Math.round(changePct * 100) / 100,
-      currency: meta.currency || "EUR",
-      symbol: symbol,
-      updated: new Date().toISOString(),
-      ok: true
-    };
-  } catch(e) {
-    console.warn("Price fetch failed for " + ticker + " (" + symbol + "):", e.message);
-    return { ok: false, symbol: symbol, error: e.message };
+    });
   }
+
+  for(var si = 0; si < symbolsToTry.length; si++) {
+    var symbol = symbolsToTry[si];
+    var url = "https://query1.finance.yahoo.com/v8/finance/chart/" + 
+              encodeURIComponent(symbol) + "?interval=1d&range=2d&includePrePost=false";
+    try {
+      var data = await fetchWithProxy(url);
+      if(!data) continue;
+
+      var result = data.chart && data.chart.result && data.chart.result[0];
+      if(!result) continue;
+
+      var meta = result.meta;
+      var price = meta.regularMarketPrice || meta.previousClose;
+      if(!price || price === 0) continue;
+
+      // IMPORTANT: skip non-EUR prices for ETFs to avoid GBP/USD confusion
+      var currency = meta.currency || "";
+      if(type === "etf" && currency && currency !== "EUR") {
+        console.warn("Skipping " + symbol + " — currency is " + currency + " not EUR");
+        continue;
+      }
+
+      var prevClose = meta.previousClose || meta.chartPreviousClose || price;
+      var change = price - prevClose;
+      var changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+      return {
+        price: Math.round(price * 100) / 100,
+        change: Math.round(change * 100) / 100,
+        changePct: Math.round(changePct * 100) / 100,
+        currency: currency,
+        symbol: symbol,
+        updated: new Date().toISOString(),
+        ok: true
+      };
+    } catch(e) {
+      console.warn("Price fetch failed for " + symbol + ":", e.message);
+    }
+  }
+  
+  console.warn("All symbols failed for " + ticker);
+  return { ok: false, symbol: primarySymbol, error: "No EUR price found" };
 }
+
 
 async function syncAllPrices() {
   var d = getData();
@@ -2167,6 +2203,20 @@ function filterGlossary() {
   document.querySelectorAll(".glossary-item").forEach(function(item) {
     item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? "" : "none";
   });
+}
+
+
+async function toggleFav(id, type) {
+  var d = getData();
+  if(type === "pos") {
+    var arr = d.portfolio.slice();
+    var item = arr.find(function(p){ return p.id === id; });
+    if(item) { item.fav = !item.fav; await saveKey("portfolio", arr); renderPortfolio(); renderDashboard(); }
+  } else {
+    var arr2 = d.watchlist.slice();
+    var item2 = arr2.find(function(w){ return w.id === id; });
+    if(item2) { item2.fav = !item2.fav; await saveKey("watchlist", arr2); renderWatchlist(); }
+  }
 }
 
 // Wait for Firebase module to be ready
