@@ -1735,8 +1735,12 @@ function transactionForm(item) {
     '</div></div>'+
     '<div class="form-group"><label class="form-label">Bedrag *</label>'+
     '<input class="form-input" id="f-tx-amount" type="number" step="0.01" placeholder="0.00" min="0" value="'+(item.amount||'')+'"></div>'+
-    '<div class="form-group"><label class="form-label">Startdatum</label>'+
-    '<input class="form-input" id="f-tx-date" type="date" value="'+(item.date||today)+'"></div>'+
+    '<div class="form-group"><label class="form-label">Datum</label>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;">'+
+    '<input class="form-input" id="f-tx-day" type="number" min="1" max="31" placeholder="Dag" value="'+(item.date?parseInt(item.date.split('-')[2]):new Date().getDate())+'">'+
+    '<input class="form-input" id="f-tx-month" type="number" min="1" max="12" placeholder="Maand" value="'+(item.date?parseInt(item.date.split('-')[1]):new Date().getMonth()+1)+'">'+
+    '<input class="form-input" id="f-tx-year" type="number" min="2020" max="2040" placeholder="Jaar" value="'+(item.date?item.date.split('-')[0]:new Date().getFullYear())+'">'+
+    '</div></div>'+
     '<div class="form-group"><label class="form-label">Notitie</label>'+
     '<input class="form-input" id="f-tx-note" value="'+(item.note||'')+'" placeholder="bv. maandelijkse DCA"></div>'+
     '<div class="form-group" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;">'+
@@ -1751,6 +1755,7 @@ function transactionForm(item) {
     '</select></div>'+
     '<div><label class="form-label">Einddatum (optioneel)</label>'+
     '<input class="form-input" id="f-rec-end" type="date" placeholder="leeg = onbepaald"></div>'+
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;">Einddatum in formaat van je browser</div>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);margin-top:8px;">&#9432; Er wordt elke maand automatisch een entry aangemaakt tot de einddatum. Je kan ze altijd individueel verwijderen.</div>'+
     '</div></div>'+
@@ -1773,7 +1778,10 @@ async function saveTransaction(editId) {
   var amount = parseFloat((document.getElementById("f-tx-amount")||{}).value);
   if(!amount || amount <= 0){ alert("Bedrag is verplicht"); return; }
   var type = (document.getElementById("r-withdraw")||{}).checked ? "withdraw" : "deposit";
-  var startDate = (document.getElementById("f-tx-date")||{}).value || new Date().toISOString().split("T")[0];
+  var txDay   = String(parseInt((document.getElementById("f-tx-day")||{}).value)||new Date().getDate()).padStart(2,"0");
+  var txMonth = String(parseInt((document.getElementById("f-tx-month")||{}).value)||new Date().getMonth()+1).padStart(2,"0");
+  var txYear  = String(parseInt((document.getElementById("f-tx-year")||{}).value)||new Date().getFullYear());
+  var startDate = txYear + "-" + txMonth + "-" + txDay;
   var note = (document.getElementById("f-tx-note")||{}).value || "";
   var isRecurring = (document.getElementById("f-recurring")||{}).checked;
   var d = getData();
