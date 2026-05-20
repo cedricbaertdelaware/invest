@@ -856,7 +856,14 @@ function renderDashboard() {
       backgroundColor:function(ctx2){var g=ctx2.chart.ctx.createLinearGradient(0,0,0,180);g.addColorStop(0,col+"22");g.addColorStop(1,"transparent");return g;},tension:0.4}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
         scales:{x:{grid:{display:false},ticks:{color:"#555570",font:{family:"DM Mono",size:10},maxTicksLimit:8},border:{display:false}},
-                y:{grid:{color:"rgba(255,255,255,0.04)"},ticks:{color:"#555570",font:{family:"DM Mono",size:10},callback:function(v){return"€"+(v/1000).toFixed(0)+"k";}},border:{display:false}}}}});
+                y:{grid:{color:"rgba(255,255,255,0.04)"},suggestedMax:Math.max.apply(null,vals)*1.1,suggestedMin:Math.min.apply(null,vals)*0.97,ticks:{color:"#555570",font:{family:"DM Mono",size:10},callback:function(v){
+    var a=Math.abs(v);
+    if(a>=1000000) return"€"+(v/1000000).toFixed(1)+"M";
+    if(a>=10000) return"€"+(v/1000).toFixed(0)+"k";
+    if(a>=1000) return"€"+(v/1000).toFixed(1)+"k";
+    if(a>=1) return"€"+v.toFixed(0);
+    return"€"+v.toFixed(2);
+  }},border:{display:false}}}}});
   }
 
   // Alloc donut
