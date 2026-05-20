@@ -849,7 +849,7 @@ function renderDashboard() {
   var ctx1 = document.getElementById("chart-value");
   if(ctx1){
     cV = destroyChart(cV);
-    var labels=snapshots.map(function(s){return s.date.slice(5);});
+    var labels=snapshots.map(function(s){var p=s.date.split('-');return p[2]+'/'+p[1];});
     var vals=snapshots.map(function(s){return s.totalValue;});
     var col=vals[vals.length-1]>=vals[0]?"#22d3a0":"#f25c7a";
     cV = new Chart(ctx1.getContext("2d"),{type:"line",data:{labels:labels,datasets:[{data:vals,borderColor:col,borderWidth:2,pointRadius:0,fill:true,
@@ -965,42 +965,63 @@ function renderTransactionSummary() {
   if(!el) return;
   var allTx = getData().transactions.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
   var today = new Date().toISOString().split("T")[0];
-  var past = allTx.filter(function(t){ return t.date <= today; }).slice(0,8);
-  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; }).slice(0,3);
-  if(!allTx.length){
+  var past     = allTx.filter(function(t){ return t.date <= today; });
+  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; });
+
+  function fmtTxDate(d) {
+    var p = d.split('-'); return p[2]+'/'+p[1]+'/'+p[0];
+  }
+  function txButtons(t) {
+    return '<button class="btn btn-icon btn-sm" data-id="'+t.id+'" onclick="editTx(this)" style="margin-left:4px;" title="Bewerk">&#9998;</button>' +
+           '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;" title="Verwijder">&#x2715;</button>';
+  }
+  function txRow(t, opacity) {
+    var isd = t.type === "deposit";
+    var icon = opacity < 1 ? "&#9654;" : (isd ? "&#8595;" : "&#8593;");
+    return '<div class="flex-center gap-8" style="padding:7px 0;border-bottom:1px solid var(--border);opacity:'+(opacity||1)+';">' +
+      '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+(isd?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">'+icon+'</div>' +
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+(isd?"Storting":"Afhaling")+
+      (t.recurring?' <span style="font-size:10px;color:var(--accent2);background:rgba(108,99,255,.12);padding:1px 6px;border-radius:10px;">&#8635; maandelijks</span>':'')+
+      '</div><div style="font-size:11px;color:var(--text3);">'+fmtTxDate(t.date)+(t.note?' &mdash; '+t.note:'')+' </div></div>' +
+      '<div style="font-family:var(--mono);font-size:13px;color:'+(isd?"var(--green)":"var(--red)") +';">'+(isd?"+":"-")+fmtC(t.amount,0)+'</div>' +
+      txButtons(t)+'</div>';
+  }
+
+  if(!allTx.length) {
     el.innerHTML = '<div class="empty-state" style="padding:16px;"><p>Nog geen stortingen &mdash; voeg een storting toe</p></div>';
     return;
   }
+
   var html = "";
+
+  // ── GEPLAND (max 3 visible, scroll if more) ──
   if(upcoming.length) {
-    html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;">Gepland</div>';
-    html += upcoming.map(function(t){
-      var isd = t.type==="deposit";
-      return '<div class="flex-center gap-8" style="padding:7px 0;border-bottom:1px solid var(--border);opacity:0.65;">' +
-        '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+(isd?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">&#9654;</div>' +
-        '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+(isd?"Storting":"Afhaling")+' <span style="font-size:10px;color:var(--accent2);background:rgba(108,99,255,.12);padding:1px 6px;border-radius:10px;">maandelijks</span></div>' +
-        '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+' </div></div>' +
-        '<div style="font-family:var(--mono);font-size:13px;color:'+(isd?"var(--green)":"var(--red)") +';">'+(isd?"+":"-")+fmtC(t.amount,0)+'</div>' +
-        '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>' +
-        '</div>';
-    }).join("");
-    if(past.length) html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;margin-top:4px;">Uitgevoerd</div>';
-  }
-  html += past.map(function(t){
-    var isd = t.type==="deposit";
-    return '<div class="flex-center gap-8" style="padding:7px 0;border-bottom:1px solid var(--border);">' +
-      '<div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:'+(isd?"var(--green-bg)":"var(--red-bg)")+';font-size:13px;">'+(isd?"&#8595;":"&#8593;")+'</div>' +
-      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--text);">'+(isd?"Storting":"Afhaling")+(t.recurring?' <span style="font-size:10px;color:var(--accent2);background:rgba(108,99,255,.12);padding:1px 6px;border-radius:10px;">&#8635; maandelijks</span>':"")+' </div>' +
-      '<div style="font-size:11px;color:var(--text3);">'+t.date+(t.note?' &mdash; '+t.note:"")+' </div></div>' +
-      '<div style="font-family:var(--mono);font-size:13px;color:'+(isd?"var(--green)":"var(--red)") +';">'+(isd?"+":"-")+fmtC(t.amount,0)+'</div>' +
-      '<button class="btn btn-icon btn-sm btn-danger" data-id="'+t.id+'" onclick="deleteTx(this)" style="margin-left:4px;">&#x2715;</button>' +
+    var upRowHeight = 48; // px per row approx
+    var upMaxH = 3 * upRowHeight;
+    html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;">'+
+      'Gepland <span style="font-weight:400;color:var(--text3);">('+upcoming.length+')</span></div>'+
+      '<div style="max-height:'+upMaxH+'px;overflow-y:auto;border-radius:var(--radius-sm);">'+
+      upcoming.map(function(t){ return txRow(t, 0.65); }).join("")+
       '</div>';
-  }).join("");
-  if(allTx.length > 8) {
-    html += '<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0;">'+ allTx.length +' transacties totaal &mdash; exporteer CSV voor volledig overzicht</div>';
   }
+
+  // ── UITGEVOERD (max 5 visible, scroll if more) ──
+  if(past.length) {
+    if(upcoming.length) {
+      html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;margin-top:4px;">'+
+        'Uitgevoerd <span style="font-weight:400;color:var(--text3);">('+past.length+')</span></div>';
+    }
+    var pastRowHeight = 48;
+    var pastMaxH = 5 * pastRowHeight;
+    html += '<div style="max-height:'+pastMaxH+'px;overflow-y:auto;border-radius:var(--radius-sm);">'+
+      past.map(function(t){ return txRow(t, 1); }).join("")+
+      '</div>';
+  }
+
   el.innerHTML = html;
 }
+
+
 
 function renderBriefing() {
   var d=getData(), portfolio=d.portfolio, alerts=d.alerts, snapshots=d.snapshots;
@@ -1698,21 +1719,22 @@ function openAddModal(type) {
 }
 
 function addTx() { openAddModal("transaction"); }
-function transactionForm() {
+function transactionForm(item) {
+  if(!item) item = {};
   var today = new Date().toISOString().split("T")[0];
   return '<div class="form-group"><label class="form-label">Type</label>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
     '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" onclick="selectTxType(\'deposit\')">'+
-    '<input type="radio" name="tx-type" value="deposit" id="r-deposit" checked style="accent-color:var(--green);"> <span style="font-size:13px;">&#8595; Storting</span></label>'+
+    '<input type="radio" name="tx-type" value="deposit" id="r-deposit"'+((!item.type||item.type==="deposit")?" checked":"")+' style="accent-color:var(--green);"> <span style="font-size:13px;">&#8595; Storting</span></label>'+
     '<label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;" onclick="selectTxType(\'withdraw\')">'+
-    '<input type="radio" name="tx-type" value="withdraw" id="r-withdraw" style="accent-color:var(--red);"> <span style="font-size:13px;">&#8593; Afhaling</span></label>'+
+    '<input type="radio" name="tx-type" value="withdraw" id="r-withdraw"'+(item.type==="withdraw"?" checked":"")+' style="accent-color:var(--red);"> <span style="font-size:13px;">&#8593; Afhaling</span></label>'+
     '</div></div>'+
     '<div class="form-group"><label class="form-label">Bedrag *</label>'+
-    '<input class="form-input" id="f-tx-amount" type="number" step="0.01" placeholder="0.00" min="0"></div>'+
+    '<input class="form-input" id="f-tx-amount" type="number" step="0.01" placeholder="0.00" min="0" value="'+(item.amount||'')+'"></div>'+
     '<div class="form-group"><label class="form-label">Startdatum</label>'+
-    '<input class="form-input" id="f-tx-date" type="date" value="'+today+'"></div>'+
+    '<input class="form-input" id="f-tx-date" type="date" value="'+(item.date||today)+'"></div>'+
     '<div class="form-group"><label class="form-label">Notitie</label>'+
-    '<input class="form-input" id="f-tx-note" placeholder="bv. maandelijkse DCA"></div>'+
+    '<input class="form-input" id="f-tx-note" value="'+(item.note||'')+'" placeholder="bv. maandelijkse DCA"></div>'+
     '<div class="form-group" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:0;" id="recurring-header">'+
     '<input type="checkbox" id="f-recurring" style="accent-color:var(--accent);width:16px;height:16px;" onchange="toggleRecurring()">'+
@@ -1729,7 +1751,7 @@ function transactionForm() {
     '<div style="font-size:11px;color:var(--text3);margin-top:8px;">&#9432; Er wordt elke maand automatisch een entry aangemaakt tot de einddatum. Je kan ze altijd individueel verwijderen.</div>'+
     '</div></div>'+
     '<div class="modal-footer"><button class="btn" onclick="closeModalDirect()">Annuleer</button>'+
-    '<button class="btn btn-primary" onclick="saveTransaction()">Opslaan</button></div>';
+    '<button class="btn btn-primary" onclick="saveTransaction(\''+(item.id||'')+'\')">Opslaan</button></div>';
 }
 
 function toggleRecurring() {
@@ -1743,7 +1765,7 @@ function selectTxType(type) {
   document.getElementById("r-withdraw").checked = (type==="withdraw");
 }
 
-async function saveTransaction() {
+async function saveTransaction(editId) {
   var amount = parseFloat((document.getElementById("f-tx-amount")||{}).value);
   if(!amount || amount <= 0){ alert("Bedrag is verplicht"); return; }
   var type = (document.getElementById("r-withdraw")||{}).checked ? "withdraw" : "deposit";
@@ -1755,8 +1777,15 @@ async function saveTransaction() {
   var recurringId = isRecurring ? uid() : null;
 
   if(!isRecurring) {
-    // Single transaction
-    tx.push({ id:uid(), type:type, amount:amount, date:startDate, note:note });
+    // Single transaction - update existing or add new
+    var newItem = { id:editId||uid(), type:type, amount:amount, date:startDate, note:note };
+    if(editId) {
+      var existingIdx = tx.findIndex(function(t){ return t.id===editId; });
+      if(existingIdx>=0) { tx[existingIdx] = newItem; }
+      else { tx.push(newItem); }
+    } else {
+      tx.push(newItem);
+    }
   } else {
     // Generate monthly entries from startDate until endDate (or 24 months if no end)
     var recDay = parseInt((document.getElementById("f-rec-day")||{}).value) || 1;
@@ -1802,6 +1831,15 @@ async function deleteTransaction(id) {
 function deleteTx(btn) {
   var id = btn.getAttribute("data-id");
   deleteTransaction(id);
+}
+function editTx(btn) {
+  var id = btn.getAttribute("data-id");
+  var d = getData();
+  var tx = d.transactions.find(function(t){ return t.id === id; });
+  if(!tx) return;
+  document.getElementById("modal-title").textContent = "Storting / Afhaling bewerken";
+  document.getElementById("modal-body").innerHTML = transactionForm(tx);
+  document.getElementById("modal-overlay").classList.add("open");
 }
 function openEditModal(id,type) {
   var d=getData();
