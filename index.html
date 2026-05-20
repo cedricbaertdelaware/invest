@@ -969,7 +969,7 @@ function renderTransactionSummary() {
   var past = allTx.filter(function(t){ return t.date <= today; })
                   .sort(function(a,b){ return b.date.localeCompare(a.date); });
   // Upcoming: soonest first (ASC)
-  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; })
+  var upcoming = allTx.filter(function(t){ return t.date > today; })
                       .sort(function(a,b){ return a.date.localeCompare(b.date); });
 
   function fmtTxDate(d) {
