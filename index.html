@@ -963,10 +963,14 @@ function renderDashboard() {
 function renderTransactionSummary() {
   var el = document.getElementById("dashboard-transactions");
   if(!el) return;
-  var allTx = getData().transactions.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
+  var allTx = getData().transactions.slice();
   var today = new Date().toISOString().split("T")[0];
-  var past     = allTx.filter(function(t){ return t.date <= today; });
-  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; });
+  // Past: most recent first (DESC)
+  var past = allTx.filter(function(t){ return t.date <= today; })
+                  .sort(function(a,b){ return b.date.localeCompare(a.date); });
+  // Upcoming: soonest first (ASC)
+  var upcoming = allTx.filter(function(t){ return t.date > today && t.recurring; })
+                      .sort(function(a,b){ return a.date.localeCompare(b.date); });
 
   function fmtTxDate(d) {
     var p = d.split('-'); return p[2]+'/'+p[1]+'/'+p[0];
