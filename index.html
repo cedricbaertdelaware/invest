@@ -1000,26 +1000,36 @@ function renderTransactionSummary() {
 
   // ── GEPLAND (max 3 visible, scroll if more) ──
   if(upcoming.length) {
-    var upRowHeight = 48; // px per row approx
-    var upMaxH = 3 * upRowHeight;
+    var upScrollable = upcoming.length > 3;
     html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;">'+
-      'Gepland <span style="font-weight:400;color:var(--text3);">('+upcoming.length+')</span></div>'+
-      '<div style="max-height:'+upMaxH+'px;overflow-y:auto;border-radius:var(--radius-sm);">'+
+      'Gepland <span style="font-weight:400;color:var(--text3);">('+upcoming.length+')</span>'+
+      (upScrollable ? ' <span style="font-weight:400;color:var(--accent2);">&#8597; scroll</span>' : '')+
+      '</div>'+
+      '<div style="'+
+        (upScrollable ? 'max-height:192px;overflow-y:auto;' : '')+
+        'border-radius:var(--radius-sm);'+
+        (upScrollable ? 'border:1px solid var(--border);padding:0 2px;' : '')+
+      '">'+
       upcoming.map(function(t){ return txRow(t, 0.65); }).join("")+
       '</div>';
   }
 
   // ── UITGEVOERD (max 5 visible, scroll if more) ──
   if(past.length) {
+    var pastScrollable = past.length > 5;
     if(upcoming.length) {
       html += '<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0 4px;margin-top:4px;">'+
-        'Uitgevoerd <span style="font-weight:400;color:var(--text3);">('+past.length+')</span></div>';
+        'Uitgevoerd <span style="font-weight:400;color:var(--text3);">('+past.length+')</span>'+
+        (pastScrollable ? ' <span style="font-weight:400;color:var(--accent2);">&#8597; scroll</span>' : '')+
+        '</div>';
     }
-    var pastRowHeight = 48;
-    var pastMaxH = 5 * pastRowHeight;
-    html += '<div style="max-height:'+pastMaxH+'px;overflow-y:auto;border-radius:var(--radius-sm);">'+
-      past.map(function(t){ return txRow(t, 1); }).join("")+
-      '</div>';
+    html += '<div style="'+
+      (pastScrollable ? 'max-height:256px;overflow-y:auto;' : '')+
+      'border-radius:var(--radius-sm);'+
+      (pastScrollable ? 'border:1px solid var(--border);padding:0 2px;' : '')+
+    '">'+
+    past.map(function(t){ return txRow(t, 1); }).join("")+
+    '</div>';
   }
 
   el.innerHTML = html;
