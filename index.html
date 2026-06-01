@@ -742,17 +742,35 @@ function cc(v){ return v>=0?"pos":"neg"; }
 function fmtDelta(v){ return '<span class="'+cc(v)+'">'+fmtPct(v)+"</span>"; }
 function typeLabel(t){ return {etf:"ETF",stock:"Aandeel",crypto:"Crypto"}[t]||t; }
 function typeBadge(t){ return '<span class="badge badge-'+t+'">'+typeLabel(t)+"</span>"; }
+function derivedFromPurchases(p) {
+  // If position has purchases array, derive qty/avgPrice/costs from it
+  var purchases = p.purchases;
+  if(!purchases || !purchases.length) return null;
+  var totalQty = 0, totalCost = 0, totalFees = 0;
+  purchases.forEach(function(b){
+    totalQty  += b.qty || 0;
+    totalCost += (b.qty || 0) * (b.price || 0);
+    totalFees += b.costs || 0;
+  });
+  var avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
+  return { qty: totalQty, avgPrice: avgPrice, costs: totalFees };
+}
+
 function calcPos(p){
-  var cv = p.qty * p.currentPrice;
-  var cb = p.qty * p.avgPrice;
-  var costs = p.costs || 0;
-  var pl = cv - cb - costs;           // net P/L after costs
-  var plGross = cv - cb;              // gross P/L before costs
-  var pp = cb > 0 ? (pl / (cb + costs)) * 100 : 0;
-  var breakEven = cb > 0 ? ((cb + costs) / p.qty) : p.avgPrice; // price needed to break even
+  var derived = derivedFromPurchases(p);
+  var qty      = derived ? derived.qty      : (p.qty      || 0);
+  var avgPrice = derived ? derived.avgPrice : (p.avgPrice || 0);
+  var costs    = derived ? derived.costs    : (p.costs    || 0);
+  var cv = qty * p.currentPrice;
+  var cb = qty * avgPrice;
+  var pl = cv - cb - costs;
+  var plGross = cv - cb;
+  var pp = (cb + costs) > 0 ? (pl / (cb + costs)) * 100 : 0;
+  var breakEven = qty > 0 ? ((cb + costs) / qty) : avgPrice;
   var breakEvenReached = p.currentPrice >= breakEven;
-  var costsRecovered = plGross >= costs; // same as breakEvenReached
-  return { cv:cv, cb:cb, pl:pl, plGross:plGross, pp:pp, costs:costs, breakEven:breakEven, breakEvenReached:breakEvenReached };
+  return { cv:cv, cb:cb, pl:pl, plGross:plGross, pp:pp, costs:costs,
+           breakEven:breakEven, breakEvenReached:breakEvenReached,
+           qty:qty, avgPrice:avgPrice };
 }
 function totalValue(){
   return getData().portfolio.reduce(function(s,p){ return s+p.qty*p.currentPrice; },0);
@@ -2041,6 +2059,44 @@ function openDetail(id, type) {
   body+='<div style="margin-bottom:12px;"><div class="form-label" style="margin-bottom:8px;">Links</div><div class="links-row">'+renderLinks(item.ticker,item.type)+'</div></div>'+
     (item.tags&&item.tags.length?'<div style="margin-bottom:12px;"><div class="form-label" style="margin-bottom:6px;">Tags</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+item.tags.map(function(t){return '<span class="tag">'+t+'</span>';}).join("")+'</div></div>':"")+
     (item.note?'<div><div class="form-label" style="margin-bottom:4px;">Notitie</div><div style="font-size:13px;color:var(--text2);font-style:italic;">'+item.note+'</div></div>':"")+
+    (type === "pos" ?
+      '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+      '<span class="form-label" style="margin:0;">Aankoophistoriek</span>' +
+      '<button class="btn btn-sm btn-primary" onclick="closeDetailDirect();openAddPurchase(\''+item.id+'\')">+ Aankoop</button>' +
+      '</div>' +
+      (function(){
+        var purchases = (item.purchases||[]).slice().sort(function(a,b){return a.date.localeCompare(b.date);});
+        if(!purchases.length) return '<div style="font-size:12px;color:var(--text3);padding:6px 0;">Nog geen aankopen — klik &quot;+ Aankoop&quot; om te starten.</div>';
+        return '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">' +
+          '<tr style="border-bottom:1px solid var(--border);">' +
+          '<th style="text-align:left;padding:5px 4px;color:var(--text3);font-weight:500;">Datum</th>' +
+          '<th style="text-align:right;padding:5px 4px;color:var(--text3);font-weight:500;">Stuks</th>' +
+          '<th style="text-align:right;padding:5px 4px;color:var(--text3);font-weight:500;">Prijs</th>' +
+          '<th style="text-align:right;padding:5px 4px;color:var(--text3);font-weight:500;">Kosten</th>' +
+          '<th style="text-align:right;padding:5px 4px;color:var(--text3);font-weight:500;">Totaal</th>' +
+          '<th></th></tr>' +
+          purchases.map(function(b){
+            var dp=b.date.split("-"); var fd=dp[2]+"/"+dp[1]+"/"+dp[0];
+            var total=b.qty*b.price+(b.costs||0);
+            return '<tr style="border-bottom:1px solid var(--border);">' +
+              '<td style="padding:6px 4px;color:var(--text2);">'+fd+'</td>' +
+              '<td style="text-align:right;font-family:var(--mono);padding:6px 4px;">'+b.qty+'</td>' +
+              '<td style="text-align:right;font-family:var(--mono);padding:6px 4px;">'+fmtC(b.price)+'</td>' +
+              '<td style="text-align:right;font-family:var(--mono);padding:6px 4px;color:var(--text3);">'+(b.costs?fmtC(b.costs):"&mdash;")+'</td>' +
+              '<td style="text-align:right;font-family:var(--mono);font-weight:500;padding:6px 4px;">'+fmtC(total)+'</td>' +
+              '<td style="text-align:right;white-space:nowrap;padding:6px 4px;">' +
+              '<button class="btn btn-icon btn-sm" onclick="closeDetailDirect();openEditPurchase(\''+item.id+'\',\''+b.id+'\')">&#9998;</button> ' +
+              '<button class="btn btn-icon btn-sm btn-danger" onclick="deletePurchase(\''+item.id+'\',\''+b.id+'\')">&#x2715;</button>' +
+              '</td></tr>';
+          }).join("") +
+          '<tr><td colspan="4" style="padding:6px 4px;color:var(--text3);">Totaal investering</td>' +
+          '<td style="text-align:right;font-family:var(--mono);font-weight:600;padding:6px 4px;">' +
+          fmtC(purchases.reduce(function(s,b){return s+b.qty*b.price+(b.costs||0);},0)) +
+          '</td><td></td></tr>' +
+          '</table></div>';
+      })() + '</div>'
+    : "") +
     '<div class="modal-footer"><button class="btn" onclick="closeDetailDirect()">Sluiten</button><button class="btn btn-primary" onclick="closeDetailDirect();openEditModal(\''+item.id+'\',\''+type+'\')">Bewerken</button></div>';
   document.getElementById("detail-body").innerHTML=body;
   document.getElementById("detail-overlay").classList.add("open");
@@ -2637,6 +2693,99 @@ function sortDropdown(view, options) {
              '<option value="' + o.value + '-desc"' + (current === o.value+"-desc" ? " selected" : "") + ">" +
              o.label + " ↓</option>";
     }).join("") + "</select>";
+}
+
+
+// ---- PURCHASE HISTORY ----
+function openAddPurchase(posId) {
+  document.getElementById("modal-title").textContent = "Aankoop toevoegen";
+  document.getElementById("modal-body").innerHTML = purchaseForm(posId, null);
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function openEditPurchase(posId, purchaseId) {
+  var pos = getData().portfolio.find(function(p){ return p.id === posId; });
+  if(!pos) return;
+  var purchase = (pos.purchases||[]).find(function(b){ return b.id === purchaseId; });
+  if(!purchase) return;
+  document.getElementById("modal-title").textContent = "Aankoop bewerken";
+  document.getElementById("modal-body").innerHTML = purchaseForm(posId, purchase);
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function purchaseForm(posId, item) {
+  if(!item) item = {};
+  var today = new Date();
+  var dd = String(today.getDate()).padStart(2,"0");
+  var mm = String(today.getMonth()+1).padStart(2,"0");
+  var yyyy = today.getFullYear();
+  return '<div class="form-row">' +
+    '<div class="form-group"><label class="form-label">Aantal *</label>' +
+    '<input class="form-input" id="f-pur-qty" type="number" step="any" min="0" value="'+(item.qty||'')+'" placeholder="bv. 5"></div>' +
+    '<div class="form-group"><label class="form-label">Aankoopprijs per stuk *</label>' +
+    '<input class="form-input" id="f-pur-price" type="number" step="any" min="0" value="'+(item.price||'')+'" placeholder="bv. 92.50"></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">Datum</label>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;">' +
+    '<input class="form-input" id="f-pur-day" type="number" min="1" max="31" placeholder="Dag" value="'+(item.date?parseInt(item.date.split("-")[2]):parseInt(dd))+'">' +
+    '<input class="form-input" id="f-pur-month" type="number" min="1" max="12" placeholder="Maand" value="'+(item.date?parseInt(item.date.split("-")[1]):parseInt(mm))+'">' +
+    '<input class="form-input" id="f-pur-year" type="number" min="2000" max="2040" placeholder="Jaar" value="'+(item.date?item.date.split("-")[0]:yyyy)+'">' +
+    '</div></div>' +
+    '<div class="form-group"><label class="form-label">Transactiekosten <span style="font-weight:400;color:var(--text3);">(makelaarsloon + TOB)</span></label>' +
+    '<input class="form-input" id="f-pur-costs" type="number" step="0.01" min="0" value="'+(item.costs||'')+'" placeholder="bv. 10.70"></div>' +
+    '<div class="form-group"><label class="form-label">Notitie</label>' +
+    '<input class="form-input" id="f-pur-note" value="'+(item.note||'')+'" placeholder="optioneel"></div>' +
+    '<div class="modal-footer">' +
+    '<button class="btn" onclick="closeModalDirect()">Annuleer</button>' +
+    '<button class="btn btn-primary" onclick="savePurchase(\''+posId+'\',\''+(item.id||'')+'\')">Opslaan</button>' +
+    '</div>';
+}
+
+async function savePurchase(posId, purchaseId) {
+  var qty   = parseFloat((document.getElementById("f-pur-qty")||{}).value);
+  var price = parseFloat((document.getElementById("f-pur-price")||{}).value);
+  if(!qty || qty <= 0 || !price || price <= 0) { alert("Aantal en prijs zijn verplicht"); return; }
+  var d = String(parseInt((document.getElementById("f-pur-day")||{}).value)||1).padStart(2,"0");
+  var m2 = String(parseInt((document.getElementById("f-pur-month")||{}).value)||1).padStart(2,"0");
+  var y = String(parseInt((document.getElementById("f-pur-year")||{}).value)||new Date().getFullYear());
+  var dateStr = y+"-"+m2+"-"+d;
+  var costs = parseFloat((document.getElementById("f-pur-costs")||{}).value)||0;
+  var note  = (document.getElementById("f-pur-note")||{}).value||"";
+  var portfolio = getData().portfolio.slice();
+  var pos = portfolio.find(function(p){ return p.id === posId; });
+  if(!pos) return;
+  if(!pos.purchases) pos.purchases = [];
+  var purchase = { id: purchaseId||uid(), qty:qty, price:price, date:dateStr, costs:costs, note:note };
+  var idx = pos.purchases.findIndex(function(b){ return b.id === purchaseId; });
+  if(idx >= 0) pos.purchases[idx] = purchase;
+  else pos.purchases.push(purchase);
+  // Sort purchases by date ASC
+  pos.purchases.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  // Update derived fields on position for display
+  var derived = derivedFromPurchases(pos);
+  if(derived) { pos.qty = derived.qty; pos.avgPrice = derived.avgPrice; pos.costs = derived.costs; }
+  await saveKey("portfolio", portfolio);
+  closeModalDirect();
+  renderPortfolio();
+  renderDashboard();
+  showToast(purchaseId ? "Aankoop bijgewerkt" : "Aankoop toegevoegd", "success");
+}
+
+async function deletePurchase(posId, purchaseId) {
+  if(!confirm("Aankoop verwijderen?")) return;
+  var portfolio = getData().portfolio.slice();
+  var pos = portfolio.find(function(p){ return p.id === posId; });
+  if(!pos || !pos.purchases) return;
+  pos.purchases = pos.purchases.filter(function(b){ return b.id !== purchaseId; });
+  // Recalculate derived fields
+  var derived = derivedFromPurchases(pos);
+  if(derived) { pos.qty = derived.qty; pos.avgPrice = derived.avgPrice; pos.costs = derived.costs; }
+  else { pos.qty = 0; pos.avgPrice = 0; pos.costs = 0; }
+  await saveKey("portfolio", portfolio);
+  openDetail(posId, "pos"); // refresh detail modal
+  renderPortfolio();
+  renderDashboard();
+  showToast("Aankoop verwijderd");
 }
 
 // Wait for Firebase module to be ready
