@@ -1747,6 +1747,26 @@ function renderSettings() {
   var tj=document.getElementById("targets-json"); if(tj) tj.value=JSON.stringify(s.targets||{},null,2);
   var fs=document.getElementById("firebase-status");
   if(fs) fs.innerHTML = '<strong>Project ID:</strong> folio-invest<br><strong>Database:</strong> Cloud Firestore (europe-west)<br><strong>Offline support:</strong> IndexedDB persistence actief<br><strong>Data-model:</strong> folio_data/{portfolio, watchlist, alerts, settings, snapshots}';
+
+  // Notification status
+  var notifEl = document.getElementById("notification-status");
+  if(notifEl) {
+    var notifSupported = "Notification" in window;
+    var perm = notifSupported ? Notification.permission : "unsupported";
+    var statusColor = perm==="granted" ? "var(--green)" : perm==="denied" ? "var(--red)" : "var(--amber)";
+    var statusText = perm==="granted" ? "✓ Ingeschakeld" : perm==="denied" ? "✗ Geblokkeerd door browser" : "⚠ Nog niet gevraagd";
+    notifEl.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
+      '<div>'+
+      '<div style="font-size:13px;font-weight:500;">Browser notificaties</div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-top:2px;">Ontvang een melding wanneer een prijsalert bereikt wordt na een sync.</div>'+
+      '<div style="font-size:12px;margin-top:4px;color:'+statusColor+';">'+statusText+'</div>'+
+      '</div>'+
+      (perm !== "granted" && notifSupported ?
+        '<button class="btn btn-sm btn-primary" onclick="requestNotifPermission()">Inschakelen</button>' :
+        (perm === "denied" ? '<span style="font-size:11px;color:var(--text3);">Schakel in via browserinstellingen</span>' : ''))+
+      '</div>';
+  }
 }
 function saveSetting(k,v){ var s=getData().settings; s[k]=v; saveKey("settings",s); }
 function saveTargets(){
@@ -2247,6 +2267,13 @@ async function initApp() {
   if(lo){ lo.style.opacity="0"; lo.style.transition="opacity .4s"; setTimeout(function(){lo.style.display="none";},400); }
 
   document.addEventListener("keydown",function(e){if(e.key==="Escape"){closeModalDirect();closeDetailDirect();}});
+
+  // Request notification permission (non-blocking)
+  if("Notification" in window && Notification.permission === "default") {
+    setTimeout(function(){
+      Notification.requestPermission();
+    }, 2000); // slight delay so it doesn't pop up immediately on load
+  }
 }
 
 
@@ -2465,6 +2492,9 @@ async function syncAllPrices() {
   var msg = success + " koersen bijgewerkt";
   if(failed > 0) msg += " &bull; " + failed + " mislukt (" + failedTickers.join(", ") + ")";
   showToast(msg, success > 0 ? "success" : "error");
+
+  // Check alerts and fire browser notifications if any are triggered
+  checkAlertsAndNotify(prices);
 
   var activeView = document.querySelector(".view.active");
   if(activeView) {
@@ -2852,6 +2882,78 @@ async function importExistingAsPurchase(posId) {
   await saveKey("portfolio", portfolio);
   showToast("Aankoop geïmporteerd — pas de datum aan indien nodig", "success");
   openDetail(posId, "pos");
+}
+
+
+// ---- BROWSER NOTIFICATIONS ----
+function sendNotification(title, body, icon) {
+  if(!("Notification" in window)) return;
+  if(Notification.permission !== "granted") return;
+  try {
+    var n = new Notification(title, {
+      body: body,
+      icon: icon || "https://cedricbaertdelaware.github.io/invest/favicon.ico",
+      badge: "https://cedricbaertdelaware.github.io/invest/favicon.ico",
+      tag: "folio-alert-" + Date.now(), // unique tag so multiple notifications stack
+    });
+    // Auto-close after 8 seconds
+    setTimeout(function(){ n.close(); }, 8000);
+    n.onclick = function(){ window.focus(); n.close(); };
+  } catch(e) {
+    console.warn("Notification failed:", e);
+  }
+}
+
+function checkAlertsAndNotify(prices) {
+  if(!("Notification" in window) || Notification.permission !== "granted") return;
+  var alerts = getData().alerts.filter(function(a){ return a.active; });
+  var triggered = [];
+
+  alerts.forEach(function(a) {
+    var pr = prices[a.ticker.toUpperCase()];
+    if(!pr || !pr.ok) return;
+    var price = pr.price;
+
+    if(a.type === "price_below" && a.value > 0 && price <= a.value) {
+      triggered.push({
+        title: "⬇ " + a.ticker + " onder €" + a.value,
+        body: "Huidige koers: " + fmtC(price) + (a.note ? " — " + a.note : ""),
+      });
+    } else if(a.type === "price_above" && a.value > 0 && price >= a.value) {
+      triggered.push({
+        title: "⬆ " + a.ticker + " boven €" + a.value,
+        body: "Huidige koers: " + fmtC(price) + (a.note ? " — " + a.note : ""),
+      });
+    }
+  });
+
+  if(triggered.length === 0) return;
+
+  // Fire one notification per triggered alert (max 3 to avoid spam)
+  triggered.slice(0, 3).forEach(function(t, i) {
+    setTimeout(function(){
+      sendNotification("📊 Folio Alert: " + t.title, t.body);
+    }, i * 800); // stagger slightly
+  });
+
+  // Also show a toast summary
+  var msg = triggered.length + " alert" + (triggered.length > 1 ? "s" : "") + " getriggerd na sync";
+  showToast(msg, "success");
+}
+
+
+function requestNotifPermission() {
+  if(!("Notification" in window)) { alert("Je browser ondersteunt geen notificaties."); return; }
+  Notification.requestPermission().then(function(perm){
+    if(perm === "granted") {
+      showToast("Notificaties ingeschakeld!", "success");
+      sendNotification("📊 Folio", "Notificaties werken! Je krijgt een melding wanneer een alert bereikt wordt.");
+      renderSettings(); // refresh status
+    } else {
+      showToast("Notificaties niet toegestaan.", "error");
+      renderSettings();
+    }
+  });
 }
 
 // Wait for Firebase module to be ready
