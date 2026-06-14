@@ -691,6 +691,18 @@ async function loadKey(key) {
 }
 
 async function saveKey(key, value) {
+  // For portfolio: keep p.qty/p.avgPrice/p.costs in sync with purchases
+  if(key === "portfolio" && Array.isArray(value)) {
+    value = value.map(function(p) {
+      if(p.purchases && p.purchases.length > 0) {
+        var d = derivedFromPurchases(p);
+        if(d && d.qty > 0) {
+          return Object.assign({}, p, { qty: d.qty, avgPrice: d.avgPrice, costs: d.costs });
+        }
+      }
+      return p;
+    });
+  }
   STATE[key] = value;
   // Save to localStorage immediately (fast)
   try { localStorage.setItem("folio_" + key, JSON.stringify(value)); } catch(e) {}
@@ -719,7 +731,9 @@ function totalDeposited() {
            .reduce(function(s,t){ return s + (t.type==="deposit" ? t.amount : -t.amount); }, 0);
 }
 function totalInvested() {
-  return getData().portfolio.reduce(function(s,p){ return s + p.qty*p.avgPrice; }, 0);
+  return getData().portfolio.reduce(function(s,p){
+    var r = calcPos(p); return s + r.qty * r.avgPrice;
+  }, 0);
 }
 function availableCash() {
   return totalDeposited() - totalInvested();
@@ -773,7 +787,10 @@ function calcPos(p){
            qty:qty, avgPrice:avgPrice };
 }
 function totalValue(){
-  return getData().portfolio.reduce(function(s,p){ return s+p.qty*p.currentPrice; },0);
+  return getData().portfolio.reduce(function(s,p){
+    var r = calcPos(p);
+    return s + r.qty * p.currentPrice;
+  }, 0);
 }
 
 function showToast(msg, type) {
