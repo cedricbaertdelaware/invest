@@ -1642,6 +1642,7 @@ function renderEnrichedCard(w, info) {
     isinRow+
     '</div>'+
     '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:8px;">'+
+    '<button class="btn btn-icon btn-sm" id="wl-refresh-'+w.id+'" onclick="syncSinglePrice(\''+w.id+'\')" title="Ververs koers">&#8635;</button>'+
     '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')" title="Bewerk">&#9998;</button>'+
     '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')" title="Verwijder">&#x2715;</button>'+
     '</div></div>'+
@@ -1680,6 +1681,7 @@ function renderBasicCard(w) {
     '<div class="asset-sub truncate">'+w.name+'</div></div>'+
     typeBadge(w.type)+'</div>'+
     '<div style="display:flex;gap:4px;flex-shrink:0;">'+
+    '<button class="btn btn-icon btn-sm" id="wl-refresh-'+w.id+'" onclick="syncSinglePrice(\''+w.id+'\')" title="Ververs koers">&#8635;</button>'+
     '<button class="btn btn-icon btn-sm" onclick="openEditModal(\''+w.id+'\',\'wl\')">&#9998;</button>'+
     '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteWatchitem(\''+w.id+'\')">&#x2715;</button>'+
     '</div></div>'+
@@ -2334,24 +2336,31 @@ function toYahooSymbol(ticker, type) {
 }
 
 
+// Optional: your own proxy (Cloudflare Worker / Firebase Cloud Function).
+// It must accept ?url=<encoded yahoo url> and return the JSON with CORS headers.
+// Example: var PRICE_PROXY = "https://yourproxy.workers.dev/?url=";
+var PRICE_PROXY = "";
+
 async function fetchWithProxy(url) {
-  // Try multiple CORS proxies in order
-  var proxies = [
-    "https://corsproxy.io/?" + encodeURIComponent(url),
-    "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
-    "https://thingproxy.freeboard.io/fetch/" + url,
-  ];
+  var enc = encodeURIComponent(url);
+  var proxies = [];
+  if(PRICE_PROXY) proxies.push({u: PRICE_PROXY + enc, wrap: false});
+  proxies.push(
+    {u: "https://api.allorigins.win/get?url=" + enc, wrap: true},
+    {u: "https://corsproxy.io/?url=" + enc, wrap: false},
+    {u: "https://api.codetabs.com/v1/proxy?quest=" + enc, wrap: false},
+    {u: "https://thingproxy.freeboard.io/fetch/" + url, wrap: false}
+  );
   for(var i = 0; i < proxies.length; i++) {
     try {
-      var resp = await fetch(proxies[i], {
-        signal: AbortSignal.timeout(6000),
-        headers: { "Accept": "application/json" }
-      });
-      if(!resp.ok) continue;
+      var resp = await fetch(proxies[i].u, { signal: AbortSignal.timeout(8000) });
+      if(!resp.ok) { console.warn("Proxy " + i + " HTTP " + resp.status); continue; }
       var text = await resp.text();
       if(!text || text.length < 10) continue;
       var json = JSON.parse(text);
-      return json;
+      if(proxies[i].wrap) json = JSON.parse(json.contents);
+      if(json && json.chart) return json;
+      console.warn("Proxy " + i + " returned unexpected payload");
     } catch(e) {
       console.warn("Proxy " + i + " failed:", e.message);
     }
@@ -2427,10 +2436,10 @@ async function syncAllPrices() {
   var seen = {};
   var items = [];
   d.portfolio.forEach(function(p){
-    if(!seen[p.ticker]) { seen[p.ticker]=true; items.push({ticker:p.ticker,type:p.type}); }
+    if(!seen[p.ticker]) { seen[p.ticker]=true; items.push({ticker:p.ticker,type:p.type,yahooSymbol:p.yahooSymbol||""}); }
   });
   d.watchlist.forEach(function(w){
-    if(!seen[w.ticker]) { seen[w.ticker]=true; items.push({ticker:w.ticker,type:w.type}); }
+    if(!seen[w.ticker]) { seen[w.ticker]=true; items.push({ticker:w.ticker,type:w.type,yahooSymbol:w.yahooSymbol||""}); }
   });
 
   if(!items.length) { showToast("Geen instrumenten om te synchroniseren"); return; }
@@ -2490,7 +2499,7 @@ async function syncAllPrices() {
   }
 
   var msg = success + " koersen bijgewerkt";
-  if(failed > 0) msg += " &bull; " + failed + " mislukt (" + failedTickers.join(", ") + ")";
+  if(failed > 0) msg += " \u2022 " + failed + " mislukt (" + failedTickers.join(", ") + ")";
   showToast(msg, success > 0 ? "success" : "error");
 
   // Check alerts and fire browser notifications if any are triggered
@@ -2502,6 +2511,43 @@ async function syncAllPrices() {
     var renders = {dashboard:renderDashboard,portfolio:renderPortfolio,watchlist:renderWatchlist,allocation:renderAllocation,briefing:renderBriefing};
     if(renders[vid]) renders[vid]();
   }
+}
+
+async function syncSinglePrice(id) {
+  var d = getData();
+  var w = d.watchlist.filter(function(x){ return x.id === id; })[0];
+  if(!w) return;
+  var btn = document.getElementById("wl-refresh-" + id);
+  if(btn) { btn.disabled = true; btn.style.opacity = "0.5"; btn.innerHTML = "&hellip;"; }
+
+  var result = await fetchYahooPrice(w.ticker, w.type, w.yahooSymbol || "");
+
+  if(result.ok) {
+    var prices = Object.assign({}, getData().prices || {});
+    prices[w.ticker.toUpperCase()] = result;
+    await saveKey("prices", prices);
+
+    var watchlist = getData().watchlist.slice();
+    watchlist.forEach(function(x){
+      if(x.ticker.toUpperCase() === w.ticker.toUpperCase()) x.currentPrice = result.price;
+    });
+    await saveKey("watchlist", watchlist);
+
+    // keep portfolio positions of the same ticker in sync
+    var portfolio = getData().portfolio.slice();
+    var touched = false;
+    portfolio.forEach(function(p){
+      if(p.ticker.toUpperCase() === w.ticker.toUpperCase()) { p.currentPrice = result.price; touched = true; }
+    });
+    if(touched) await saveKey("portfolio", portfolio);
+
+    showToast(w.ticker + " bijgewerkt: " + fmtC(result.price), "success");
+    checkAlertsAndNotify(prices);
+  } else {
+    showToast(w.ticker + ": koers ophalen mislukt", "error");
+  }
+
+  renderWatchlist();
 }
 
 function showSyncProgress(current, total, ticker) {
