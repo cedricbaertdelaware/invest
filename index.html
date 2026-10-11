@@ -2003,11 +2003,18 @@ async function savePosition(id) {
   closeModalDirect(); renderPortfolio(); renderDashboard();
   showToast(idx>=0?"Positie bijgewerkt":"Positie toegevoegd","success");
 }
+var _savingWatch = false;
 async function saveWatchitem(id) {
+  if(_savingWatch) return;
   var ticker=(document.getElementById("f-ticker")||{}).value||"";
   ticker=ticker.toUpperCase().trim();
   if(!ticker){ alert("Ticker is verplicht"); return; }
   var d=getData();
+  if(!id && d.watchlist.some(function(w){ return w.ticker.toUpperCase() === ticker; })) {
+    alert(ticker + " staat al in je watchlist"); return;
+  }
+  _savingWatch = true;
+  try {
   var item={id:id||uid(),ticker:ticker,name:(document.getElementById("f-name")||{}).value||ticker,
     type:(document.getElementById("f-type")||{}).value||"etf",
     tags:((document.getElementById("f-tags")||{}).value||"").split(",").map(function(t){return t.trim();}).filter(Boolean),
@@ -2018,6 +2025,7 @@ async function saveWatchitem(id) {
   var idx=watchlist.findIndex(function(w){return w.id===id;});
   if(idx>=0) watchlist[idx]=item; else watchlist.push(item);
   await saveKey("watchlist",watchlist);
+  } finally { _savingWatch = false; }
   closeModalDirect(); renderWatchlist();
   showToast("Watchlist bijgewerkt","success");
 }
@@ -2239,6 +2247,19 @@ async function initApp() {
     await loadKey(keys[i]);
   }
 
+  // Remove duplicate watchlist entries (same ticker), keeping the first
+  if(Array.isArray(STATE.watchlist)) {
+    var seenT = {}, deduped = STATE.watchlist.filter(function(w){
+      var k = (w.ticker||"").toUpperCase();
+      if(seenT[k]) return false; seenT[k] = true; return true;
+    });
+    if(deduped.length !== STATE.watchlist.length) {
+      var removedN = STATE.watchlist.length - deduped.length;
+      await saveKey("watchlist", deduped);
+      setTimeout(function(){ showToast(removedN + " dubbele watchlist-item(s) verwijderd", "success"); }, 800);
+    }
+  }
+
   var s=getData().settings;
   document.documentElement.setAttribute("data-theme",s.theme||"dark");
 
@@ -2336,40 +2357,100 @@ function toYahooSymbol(ticker, type) {
 }
 
 
-// Optional: your own proxy (Cloudflare Worker / Firebase Cloud Function).
-// It must accept ?url=<encoded yahoo url> and return the JSON with CORS headers.
-// Example: var PRICE_PROXY = "https://yourproxy.workers.dev/?url=";
-var PRICE_PROXY = "";
+// ---- Keyless, in-file price sources ----
+// Crypto: Binance / Coinbase public APIs (CORS enabled, no key).
+// Stocks/ETFs: Yahoo chart data via JSONP (no proxy) and then a chain of free public proxies.
+
+function jsonpFetch(url, timeout) {
+  return new Promise(function(resolve, reject) {
+    var cb = "_yf" + Math.random().toString(36).slice(2);
+    var sc = document.createElement("script");
+    var done = false;
+    function cleanup() { clearTimeout(t); delete window[cb]; if(sc.parentNode) sc.parentNode.removeChild(sc); }
+    var t = setTimeout(function(){ if(!done){ done = true; cleanup(); reject(new Error("jsonp timeout")); } }, timeout || 5000);
+    window[cb] = function(d) { if(done) return; done = true; cleanup(); resolve(d); };
+    sc.onerror = function() { if(done) return; done = true; cleanup(); reject(new Error("jsonp error")); };
+    sc.onload = function() { setTimeout(function(){ if(!done){ done = true; cleanup(); reject(new Error("jsonp not supported")); } }, 80); };
+    sc.src = url + (url.indexOf("?") >= 0 ? "&" : "?") + "callback=" + cb;
+    document.head.appendChild(sc);
+  });
+}
+
+function extractJSON(text) {
+  var i = text.indexOf("{"), j = text.lastIndexOf("}");
+  if(i < 0 || j <= i) throw new Error("no json");
+  return JSON.parse(text.slice(i, j + 1));
+}
 
 async function fetchWithProxy(url) {
   var enc = encodeURIComponent(url);
-  var proxies = [];
-  if(PRICE_PROXY) proxies.push({u: PRICE_PROXY + enc, wrap: false});
-  proxies.push(
-    {u: "https://api.allorigins.win/get?url=" + enc, wrap: true},
-    {u: "https://corsproxy.io/?url=" + enc, wrap: false},
-    {u: "https://api.codetabs.com/v1/proxy?quest=" + enc, wrap: false},
-    {u: "https://thingproxy.freeboard.io/fetch/" + url, wrap: false}
-  );
+  window._priceDiag = window._priceDiag || [];
+
+  // 1. JSONP: no proxy needed if Yahoo still honours the callback parameter
+  try {
+    var jd = await jsonpFetch(url, 5000);
+    if(jd && jd.chart) return jd;
+  } catch(e) { window._priceDiag.push("jsonp: " + e.message); }
+
+  // 2. Free public proxies
+  var proxies = [
+    {u: "https://api.allorigins.win/raw?url=" + enc, kind: "json"},
+    {u: "https://api.codetabs.com/v1/proxy?quest=" + enc, kind: "json"},
+    {u: "https://corsproxy.io/?url=" + enc, kind: "json"},
+    {u: "https://thingproxy.freeboard.io/fetch/" + url, kind: "json"},
+    {u: "https://r.jina.ai/" + url, kind: "text"}
+  ];
   for(var i = 0; i < proxies.length; i++) {
     try {
       var resp = await fetch(proxies[i].u, { signal: AbortSignal.timeout(8000) });
-      if(!resp.ok) { console.warn("Proxy " + i + " HTTP " + resp.status); continue; }
+      if(!resp.ok) { window._priceDiag.push("proxy " + i + ": HTTP " + resp.status); continue; }
       var text = await resp.text();
-      if(!text || text.length < 10) continue;
-      var json = JSON.parse(text);
-      if(proxies[i].wrap) json = JSON.parse(json.contents);
+      var json = proxies[i].kind === "json" ? JSON.parse(text) : extractJSON(text);
       if(json && json.chart) return json;
-      console.warn("Proxy " + i + " returned unexpected payload");
+      window._priceDiag.push("proxy " + i + ": unexpected payload");
     } catch(e) {
-      console.warn("Proxy " + i + " failed:", e.message);
+      window._priceDiag.push("proxy " + i + ": " + e.message);
     }
   }
   return null;
 }
 
+async function fetchCryptoPrice(t) {
+  var now = new Date().toISOString();
+  // Binance (EUR pair, includes 24h change)
+  try {
+    var r = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=" + t + "EUR", { signal: AbortSignal.timeout(6000) });
+    if(r.ok) {
+      var j = await r.json();
+      var price = parseFloat(j.lastPrice);
+      if(price > 0) return {
+        price: Math.round(price * 100) / 100,
+        change: Math.round(parseFloat(j.priceChange) * 100) / 100,
+        changePct: Math.round(parseFloat(j.priceChangePercent) * 100) / 100,
+        currency: "EUR", symbol: t + "EUR (Binance)", updated: now, ok: true
+      };
+    }
+  } catch(e) { (window._priceDiag = window._priceDiag || []).push("binance: " + e.message); }
+  // Coinbase (spot only)
+  try {
+    var r2 = await fetch("https://api.coinbase.com/v2/prices/" + t + "-EUR/spot", { signal: AbortSignal.timeout(6000) });
+    if(r2.ok) {
+      var j2 = await r2.json();
+      var p2 = parseFloat(j2.data && j2.data.amount);
+      if(p2 > 0) return { price: Math.round(p2 * 100) / 100, change: 0, changePct: 0,
+        currency: "EUR", symbol: t + "-EUR (Coinbase)", updated: now, ok: true };
+    }
+  } catch(e) { (window._priceDiag = window._priceDiag || []).push("coinbase: " + e.message); }
+  return null;
+}
+
 async function fetchYahooPrice(ticker, type, customSymbol) {
   var t = ticker.toUpperCase();
+  window._priceDiag = [];
+  if(type === "crypto" && !customSymbol) {
+    var cr = await fetchCryptoPrice(t);
+    if(cr) return cr;
+  }
   var primarySymbol = customSymbol || toYahooSymbol(t, type);
   
   // For ETFs: try multiple EUR-listed exchanges in order
@@ -2426,7 +2507,7 @@ async function fetchYahooPrice(ticker, type, customSymbol) {
     }
   }
   
-  console.warn("All symbols failed for " + ticker);
+  console.warn("All symbols failed for " + ticker, window._priceDiag);
   return { ok: false, symbol: primarySymbol, error: "No EUR price found" };
 }
 
@@ -2521,6 +2602,13 @@ async function syncSinglePrice(id) {
   if(btn) { btn.disabled = true; btn.style.opacity = "0.5"; btn.innerHTML = "&hellip;"; }
 
   var result = await fetchYahooPrice(w.ticker, w.type, w.yahooSymbol || "");
+
+  if(!result.ok) {
+    var m = prompt("Automatisch ophalen van " + w.ticker + " is mislukt.\nVoer de koers handmatig in (leeg laten = annuleren):");
+    var n = m ? parseFloat(String(m).replace(",", ".")) : NaN;
+    if(n > 0) result = { price: n, change: 0, changePct: 0, currency: "EUR", symbol: "handmatig",
+                         updated: new Date().toISOString(), ok: true, manual: true };
+  }
 
   if(result.ok) {
     var prices = Object.assign({}, getData().prices || {});
